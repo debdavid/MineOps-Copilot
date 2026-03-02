@@ -73,9 +73,9 @@ with col2:
     st.metric("Critical Failures", critical_failures)
     if critical_failures > 0:
         # Using markdown with a custom color tag kills the arrow and keeps the red warning
-        st.markdown(":red[**⚠️ FAILURES: ACTION REQUIRED**]")
+        st.markdown(":red[**⚠️ACTION REQUIRED**]")
     else:
-        st.markdown(":green[**✅ SYSTEM OPERATIONAL**]")
+        st.markdown(":green[**✅SYSTEM OPERATIONAL**]")
 
 col3.metric("Avg Fleet Temp (K)", f"{avg_temp:.1f}")
 col4.metric("Avg Tool Wear (mins)", f"{avg_wear:.0f}")
