@@ -1,5 +1,6 @@
 streamlit
 pandas
+plotly
 langgraph
 langchain-groq
 python-dotenv
