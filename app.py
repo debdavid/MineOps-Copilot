@@ -19,17 +19,34 @@ def telemetry_ingestion(state: AgentState):
     return {"sensor_data": state["sensor_data"]}
 
 def reliability_analysis(state: AgentState):
-    prompt = f"""You are a Reliability Analyst for a mining operation. Review this equipment sensor data and provide a clear, business-friendly summary of the mechanical failure. 
-    Focus on what component failed, the severity, and the immediate operational impact.
-    Data: {state['sensor_data']}"""
+    # This Agent now performs SCENARIO PLANNING for Business Impact
+    prompt = f"""
+    You are a Senior Reliability Engineer. Analyze this telemetry and perform a 
+    Risk-Adjusted Diagnostic using this structure:
+
+    1. AT-RISK FAILURE: (e.g., Heat Dissipation, Overstrain)
+    2. SCENARIO: (If run for 4+ more hours, what is the 'Catastrophic' result?)
+    3. BUSINESS IMPACT: (Estimated repair cost vs. 20-min cooling shutdown)
+
+    Keep it snappy. Focus on saving the '$1M repair' cost.
+    Data: {state['sensor_data']}
+    """
     response = llm.invoke(prompt)
     return {"diagnostic_report": response.content}
 
 def operations_communication(state: AgentState):
-    prompt = f"""You are a Mine Control Room Supervisor. Write a formal shift handover memo based on the following diagnostic. 
-    Output ONLY the memo text. Do not include conversational filler. 
-    Use professional, authoritative language. Focus on isolation protocols and safety boundaries.
-    Diagnostic: {state['diagnostic_report']}"""
+    # This Agent ORCHESTRATES the final DECISION Recommendation
+    prompt = f"""
+    You are a Mine Control Room Supervisor. Convert the diagnostic into a 
+    Formal Decision Directive. 
+
+    - RECOMMENDATION: [e.g., SHUT DOWN FOR 20 MINS NOW]
+    - THE RATIONALE: [Why this prevents a $1M seizure]
+    - PROTOCOL: [Specific safety boundaries for isolation]
+
+    Tone: Authoritative, Professional, Urgent.
+    Diagnostic: {state['diagnostic_report']}
+    """
     response = llm.invoke(prompt)
     return {"final_memo": response.content}
 
@@ -45,19 +62,17 @@ workflow.add_edge("coach", END)
 app_engine = workflow.compile()
 
 # ==========================================
-# STREAMLIT USER INTERFACE
+# STREAMLIT USER INTERFACE (VANTAGE)
 # ==========================================
 st.set_page_config(page_title="VANTAGE | Ops Intelligence", layout="wide")
 
 st.title("VANTAGE: Operations Intelligence Engine")
-st.markdown("Multi-agent orchestration layer for industrial reliability and shift handover.")
+st.markdown("Predictive Orchestration Layer: Turning lagging facts into leading actions.")
 
-# --- DATA LOADING (CRITICAL FIX) ---
+# --- DATA LOADING ---
 @st.cache_data
 def load_data():
-    # Ensure this file exists in your folder!
     return pd.read_csv("mining_sensor_stream.csv")
-
 df = load_data()
 
 # --- SECTION 1: TOP KPI DASHBOARD ---
@@ -65,79 +80,56 @@ st.subheader("Live Fleet Overview")
 col1, col2, col3, col4 = st.columns(4)
 
 total_machines = len(df)
-critical_failures = df['Machine_Failure'].sum()
-avg_temp = df['Air_Temp_K'].mean()
-avg_wear = df['Tool_Wear_min'].mean()
+historical_failures = df['Machine_Failure'].sum() # LAGGING
+
+# LEADING INDICATOR: We identify "At Risk" machines (high wear + high torque)
+at_risk_count = len(df[(df['Tool_Wear_min'] > 180) & (df['Torque_Nm'] > 50) & (df['Machine_Failure'] == 0)])
 
 col1.metric("Monitored Assets", total_machines)
-
-with col2:
-    st.metric("Critical Failures", critical_failures)
-    if critical_failures > 0:
-        st.markdown(":red[**⚠️ ACTION REQUIRED**]")
-    else:
-        st.markdown(":green[**✅ SYSTEM OPERATIONAL**]")
-
-col3.metric("Avg Fleet Temp (K)", f"{avg_temp:.1f}")
-col4.metric("Avg Tool Wear (mins)", f"{avg_wear:.0f}")
+col2.metric("Historical Failures", historical_failures, delta="Lagging Fact", delta_color="off")
+col3.metric("Assets At Risk", at_risk_count, delta="Leading Prediction", delta_color="inverse")
+col4.metric("Avg Fleet Temp (K)", f"{df['Air_Temp_K'].mean():.1f}")
 
 st.divider()
 
-# --- SECTION 2: INTERACTIVE ANALYSIS ---
+# --- SECTION 2: INTERACTIVE SCENARIO PLANNING ---
 left_col, right_col = st.columns([1, 1.2])
 
 with left_col:
-    st.subheader("Mechanical Stress Trends")
-    st.caption("Y-Axis: Value | X-Axis: Time/Data Points")
+    st.subheader("Predictive Stress Trends")
+    st.caption("Monitoring the 'Non-Obvious Edges' of Equipment Health")
     
     chart_data = df[['Tool_Wear_min', 'Torque_Nm']].head(50).copy()
     chart_data.columns = ["Tool Wear (Minutes)", "Torque (Newton-meters)"]
-    
     st.line_chart(chart_data)
 
-    # Added Professional Explanation
-    st.info("""
-    **VANTAGE Analysis:** This trend monitors the relationship between mechanical force (Torque) and physical degradation (Tool Wear). 
-    Spikes in Torque combined with high Tool Wear indicate a high probability of **Overstrain Failure**.
+    st.warning("""
+    **VANTAGE Intelligence:** High Tool Wear (Blue) combined with Torque spikes (Light Blue) 
+    creates a 'Complexity Curve' leading to engine seizure. Action is required before the fact.
     """)
     
-    st.subheader("Manual Diagnostic Override")
-    failing_machines_df = df[df['Machine_Failure'] == 1]
-    selected_udi = st.selectbox(
-        "Select Flagged Machine ID (UDI) for Inspection:", 
-        failing_machines_df['UDI'].tolist()
-    )
+    st.subheader("Scenario Override: Machine Inspection")
+    # Show only machines currently at risk but not yet failed
+    risk_list = df[(df['Tool_Wear_min'] > 150) & (df['Machine_Failure'] == 0)]['UDI'].tolist()
+    
+    selected_udi = st.selectbox("Select Machine UDI for 'What-If' Analysis:", risk_list if risk_list else df['UDI'].head(10))
     
     selected_row = df[df['UDI'] == selected_udi].iloc[0]
-    st.markdown("**Selected Machine Telemetry:**")
+    st.write("**Current Telemetry Payload:**")
+    st.dataframe(selected_row[["Air_Temp_K", "Torque_Nm", "Tool_Wear_min"]].to_frame().T, hide_index=True)
     
-    display_cols = ["Air_Temp_K", "Process_Temp_K", "Rotational_Speed_rpm", "Torque_Nm", "Tool_Wear_min"]
-    clean_df = selected_row[display_cols].to_frame().T
-    clean_df.columns = ["Air Temp (K)", "Process Temp (K)", "Speed (RPM)", "Torque (Nm)", "Wear (mins)"]
-    
-    st.dataframe(clean_df, hide_index=True, use_container_width=True)
-    
-    start_simulation = st.button("Run AI Diagnostic Protocol", type="primary")
+    start_simulation = st.button("Run Business Impact Diagnostic", type="primary")
 
 with right_col:
     st.subheader("Multi-Agent Analysis Log")
     
     if start_simulation:
-        with st.status("Initiating Analysis Engine...", expanded=True) as status:
-            st.write(f"**Telemetry Ingestion Engine:** Extracting payload for Machine {selected_udi}...")
-            
-            final_state = app_engine.invoke({
-                "sensor_data": selected_row.to_string(), 
-                "diagnostic_report": "", 
-                "final_memo": ""
-            })
-            
-            st.write("**Reliability Analysis Model:** Processing diagnostic...")
-            st.write("**Operations Communication Interface:** Generating handover protocol...")
-            status.update(label="Analysis Complete. Audited and Logged.", state="complete", expanded=False)
+        with st.status("Analyzing Risks & Scenario Planning...", expanded=True) as status:
+            final_state = app_engine.invoke({"sensor_data": selected_row.to_string(), "diagnostic_report": "", "final_memo": ""})
+            status.update(label="Scenario Analysis Complete.", state="complete", expanded=False)
         
         st.write("### Business Impact Diagnostic")
         st.info(final_state["diagnostic_report"])
         
-        st.write("### Formal Shift Handover Protocol")
+        st.write("### Formal Decision Directive")
         st.success(final_state["final_memo"])
