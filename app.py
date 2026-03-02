@@ -7,35 +7,38 @@ from dotenv import load_dotenv
 
 # 1. Initialize AI and Environment
 load_dotenv()
-llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.2)
+# Lowered temperature to 0.1 to force the AI to be highly analytical and formal
+llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.1) 
 
 class AgentState(TypedDict):
     sensor_data: str
     diagnostic_report: str
     final_memo: str
 
-# 2. Define the Agents (Nodes)
-def edge_router(state: AgentState):
-    # The UI now handles selecting the specific data row, so the router just passes it along!
+# 2. Define the Agents (Nodes) - UPGRADED PROMPTS
+def telemetry_ingestion(state: AgentState):
     return {"sensor_data": state["sensor_data"]}
 
-def reliability_engineer(state: AgentState):
-    prompt = f"""You are a senior mining reliability engineer. Look at this raw sensor data and diagnose the likely failure. Keep it brief and analytical.
+def reliability_analysis(state: AgentState):
+    prompt = f"""You are a Reliability Analyst for a mining operation. Review this equipment sensor data and provide a clear, business-friendly summary of the mechanical failure. 
+    Avoid overly dense engineering jargon. Focus on what component failed, the severity, and the immediate operational impact.
     Data: {state['sensor_data']}"""
     response = llm.invoke(prompt)
     return {"diagnostic_report": response.content}
 
-def handover_coach(state: AgentState):
-    prompt = f"""You are a shift supervisor. Translate this technical diagnostic into a simple, 2-sentence safety memo for the next shift worker. Focus on safety and immediate actions.
+def operations_communication(state: AgentState):
+    prompt = f"""You are a Mine Control Room Supervisor. Write a formal shift handover memo based on the following diagnostic. 
+    Output ONLY the memo text. Do not include conversational filler like "Here is the memo" or "Sure". 
+    Use professional, authoritative language suitable for heavy industry. Focus on isolation protocols, safety boundaries, and the required maintenance work order.
     Diagnostic: {state['diagnostic_report']}"""
     response = llm.invoke(prompt)
     return {"final_memo": response.content}
 
 # 3. Build the Graph Engine
 workflow = StateGraph(AgentState)
-workflow.add_node("router", edge_router)
-workflow.add_node("engineer", reliability_engineer)
-workflow.add_node("coach", handover_coach)
+workflow.add_node("router", telemetry_ingestion)
+workflow.add_node("engineer", reliability_analysis)
+workflow.add_node("coach", operations_communication)
 workflow.add_edge(START, "router")
 workflow.add_edge("router", "engineer")
 workflow.add_edge("engineer", "coach")
@@ -43,32 +46,29 @@ workflow.add_edge("coach", END)
 app_engine = workflow.compile()
 
 # ==========================================
-# 🎨 UPGRADED STREAMLIT USER INTERFACE
+# STREAMLIT USER INTERFACE
 # ==========================================
-st.set_page_config(page_title="MineOps Command Center", layout="wide", page_icon="⛏️")
+st.set_page_config(page_title="MineOps Command Center", layout="wide")
 
-st.title("⛏️ MineOps Copilot: Command Center")
-st.markdown("Interactive Edge-to-Cloud AI orchestration for predictive maintenance.")
+st.title("MineOps Copilot: Command Center")
+st.markdown("Automated Edge-to-Cloud telemetry analysis and shift handover protocol.")
 
-# Load data efficiently
 @st.cache_data
 def load_data():
     return pd.read_csv("mining_sensor_stream.csv")
 df = load_data()
 
 # --- SECTION 1: TOP KPI DASHBOARD ---
-st.subheader("📊 Live Fleet Overview")
+st.subheader("Live Fleet Overview")
 col1, col2, col3, col4 = st.columns(4)
 
-# Calculate live metrics
 total_machines = len(df)
 critical_failures = df['Machine_Failure'].sum()
 avg_temp = df['Air_Temp_K'].mean()
 avg_wear = df['Tool_Wear_min'].mean()
 
-# Display KPIs
 col1.metric("Monitored Assets", total_machines)
-col2.metric("Critical Failures", f"{critical_failures} 🚨", "- Requires Attention", delta_color="inverse")
+col2.metric("Critical Failures", critical_failures, delta="Attention Required", delta_color="off")
 col3.metric("Avg Fleet Temp (K)", f"{avg_temp:.1f}")
 col4.metric("Avg Tool Wear (mins)", f"{avg_wear:.0f}")
 
@@ -78,46 +78,48 @@ st.divider()
 left_col, right_col = st.columns([1, 1.2])
 
 with left_col:
-    st.subheader("📈 Equipment Wear & Torque Trends")
-    st.info("Tracking mechanical stress across the fleet...")
-    # Plot Tool Wear and Torque to visualize mechanical stress
+    st.subheader("Equipment Wear & Torque Trends")
     st.line_chart(df[['Tool_Wear_min', 'Torque_Nm']].head(50))
     
-    st.subheader("🎯 Manual Diagnostic Override")
-    # INTERACTIVITY: Let the operator choose which failing machine to analyze
+    st.subheader("Manual Diagnostic Override")
     failing_machines_df = df[df['Machine_Failure'] == 1]
     selected_udi = st.selectbox(
-        "Select a flagged Machine ID (UDI) to inspect:", 
+        "Select Flagged Machine ID (UDI) for Inspection:", 
         failing_machines_df['UDI'].tolist()
     )
     
-    # Grab the specific row the user selected
+    # Isolate the specific row and format it for the business user
     selected_row = df[df['UDI'] == selected_udi].iloc[0]
-    st.dataframe(selected_row.to_frame().T, hide_index=True)
+    st.markdown("**Selected Machine Telemetry:**")
     
-    start_simulation = st.button("🚨 Run AI Diagnostic on Selected Machine", type="primary")
+    display_cols = ["Air_Temp_K", "Process_Temp_K", "Rotational_Speed_rpm", "Torque_Nm", "Tool_Wear_min"]
+    clean_df = selected_row[display_cols].to_frame().T
+    clean_df.columns = ["Air Temp (K)", "Process Temp (K)", "Speed (RPM)", "Torque (Nm)", "Wear (mins)"]
+    
+    st.dataframe(clean_df, hide_index=True, use_container_width=True)
+    
+    start_simulation = st.button("Run AI Diagnostic Protocol", type="primary")
 
 with right_col:
-    st.subheader("🧠 Multi-Agent Analysis Log")
+    st.subheader("Multi-Agent Analysis Log")
     
     if start_simulation:
-        with st.status("Initiating Agent Swarm...", expanded=True) as status:
-            st.write(f"🕵️ **Agent 1 (Edge Router):** Extracting telemetry for Machine {selected_udi}...")
+        with st.status("Initiating Analysis Engine...", expanded=True) as status:
+            st.write(f"**Telemetry Ingestion Engine:** Extracting payload for Machine {selected_udi}...")
             
-            # Pass the SPECIFIC row the user selected into the LangGraph state
             final_state = app_engine.invoke({
                 "sensor_data": selected_row.to_string(), 
                 "diagnostic_report": "", 
                 "final_memo": ""
             })
             
-            st.write("🔧 **Agent 2 (Reliability Eng):** Diagnosing mechanical failure...")
-            st.write("📝 **Agent 3 (Handover Coach):** Translating diagnostic into safety memo...")
-            status.update(label="Analysis Complete! Data Lineage Audited.", state="complete", expanded=False)
+            st.write("**Reliability Analysis Model:** Processing diagnostic...")
+            st.write("**Operations Communication Interface:** Generating handover protocol...")
+            status.update(label="Analysis Complete. Audited and Logged.", state="complete", expanded=False)
         
-        st.write("### 🔬 Technical Diagnostic (Agent 2)")
+        st.write("### Business Impact Diagnostic")
         st.info(final_state["diagnostic_report"])
         
-        st.write("### ⚠️ Shift Handover Memo (Agent 3)")
+        st.write("### Formal Shift Handover Protocol")
         st.success(final_state["final_memo"])
         
