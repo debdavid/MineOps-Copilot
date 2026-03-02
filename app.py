@@ -47,15 +47,10 @@ app_engine = workflow.compile()
 # ==========================================
 # STREAMLIT USER INTERFACE
 # ==========================================
-st.set_page_config(page_title="MineOps Command Center", layout="wide")
+st.set_page_config(page_title="VANTAGE | Ops Intelligence", layout="wide")
 
-st.title("MineOps Copilot: Command Center")
-st.markdown("Automated Edge-to-Cloud telemetry analysis and shift handover protocol.")
-
-@st.cache_data
-def load_data():
-    return pd.read_csv("mining_sensor_stream.csv")
-df = load_data()
+st.title("VANTAGE: Operations Intelligence Engine")
+st.markdown("Multi-agent orchestration layer for industrial reliability and shift handover.")
 
 # --- SECTION 1: TOP KPI DASHBOARD ---
 st.subheader("Live Fleet Overview")
