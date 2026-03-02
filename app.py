@@ -15,11 +15,12 @@ class AgentState(TypedDict):
     diagnostic_report: str
     final_memo: str
 
-# 2. Define the Agents (Nodes)
+# 2. Define the Agents (Nodes) - "Snappy" Prompts to reduce Cognitive Load
 def telemetry_ingestion(state: AgentState):
     return {"sensor_data": state["sensor_data"]}
 
 def reliability_analysis(state: AgentState):
+    # The DIAGNOSER (Intelligence Engine)
     prompt = f"""
     You are a Senior Reliability Engineer. Analyze this telemetry and perform a 
     Risk-Adjusted Diagnostic using this structure:
@@ -35,6 +36,7 @@ def reliability_analysis(state: AgentState):
     return {"diagnostic_report": response.content}
 
 def operations_communication(state: AgentState):
+    # The ACTION ORCHESTRATOR (Agent Chain)
     prompt = f"""
     You are a Mine Control Room Supervisor. Convert the diagnostic into a 
     Formal Decision Directive. 
@@ -61,83 +63,100 @@ workflow.add_edge("coach", END)
 app_engine = workflow.compile()
 
 # ==========================================
-# STREAMLIT USER INTERFACE (VANTAGE)
+# 4. DATA LOGIC & RISK SCORING
+# ==========================================
+def calculate_risk_score(row):
+    """Tethers sensor data to a 0-100 Risk Score."""
+    # Weighting: Wear (40%), Torque (40%), Temp (20%)
+    wear_score = min((row['Tool_Wear_min'] / 250) * 100, 100)
+    torque_score = min((row['Torque_Nm'] / 70) * 100, 100)
+    temp_score = min(((row['Air_Temp_K'] - 280) / 40) * 100, 100)
+    
+    total_score = (wear_score * 0.4) + (torque_score * 0.4) + (temp_score * 0.2)
+    return round(total_score, 1)
+
+def classify_risk(row):
+    if row['Machine_Failure'] == 1:
+        return "🔴 Historical Failure"
+    if row['Risk_Score'] > 75:
+        return "🟡 AT RISK (Action Required)"
+    return "🔵 Operational"
+
+@st.cache_data
+def load_data():
+    df = pd.read_csv("mining_sensor_stream.csv")
+    df['Risk_Score'] = df.apply(calculate_risk_score, axis=1)
+    df['Status'] = df.apply(classify_risk, axis=1)
+    return df
+
+# ==========================================
+# 5. STREAMLIT UI (Attention System)
 # ==========================================
 st.set_page_config(page_title="VANTAGE | Ops Intelligence", layout="wide")
 
 st.title("VANTAGE: Operations Intelligence Engine")
-st.markdown("Predictive Orchestration: Moving knowledge work up an abstraction layer.")
+st.markdown("Predictive Orchestration: Moving from Lagging Facts to Leading Actions.")
 
-@st.cache_data
-def load_data():
-    return pd.read_csv("mining_sensor_stream.csv")
 df = load_data()
 
 # --- SECTION 1: TOP KPI DASHBOARD ---
 st.subheader("Live Fleet Overview")
 col1, col2, col3, col4 = st.columns(4)
 
-total_machines = len(df)
-historical_failures = df['Machine_Failure'].sum()
-at_risk_count = len(df[
-    (df['Machine_Failure'] == 0) & 
-    ((df['Tool_Wear_min'] > 180) | (df['Torque_Nm'] > 60))
-])
+at_risk_df = df[df['Status'] == "🟡 AT RISK (Action Required)"]
 
-col1.metric("Monitored Assets", total_machines)
-col2.metric("Historical Failures", historical_failures, help="Lagging Fact.")
+col1.metric("Monitored Assets", len(df))
+col2.metric("Historical Failures", df['Machine_Failure'].sum(), help="Lagging Indicators.")
 
-# FIX: Action Required is now RED when assets are at risk
 with col3:
-    st.metric("Assets At Risk", at_risk_count, help="Leading Indicator.")
-    if at_risk_count > 0:
+    st.metric("Assets At Risk", len(at_risk_df), help="Leading Indicators.")
+    if len(at_risk_df) > 0:
         st.markdown(":red[**⚠️ ACTION REQUIRED**]")
     else:
         st.markdown(":green[**✅ SYSTEM OPERATIONAL**]")
 
-# NEW INSIGHT: Financial Protection Metric
-protected_value = at_risk_count * 1.2 # Assuming $1.2M average repair cost saved
-col4.metric("Capital At Risk", f"${protected_value:.1f}M", delta="Critical Exposure", delta_color="inverse")
+col4.metric("Capital Exposed", f"${len(at_risk_df)*1.2:.1f}M", delta="Repair Risk", delta_color="inverse")
 
 st.divider()
 
-# --- SECTION 2: INTERACTIVE SCENARIO PLANNING ---
+# --- SECTION 2: INTERACTIVE RISK FRONTIER ---
 left_col, right_col = st.columns([1, 1.2])
 
 with left_col:
     st.subheader("3.D. Risk Frontier Analysis")
     
-    st.info("""
-    **Insight:** This 3D space visualizes the convergence of **Wear, Torque, and Heat**. 
-    Assets floating in the top-right-back corner have reached the physical 'Frontier' and are 
-    highest priority for intervention.
+    st.info(f"""
+    **Current Analysis:** Yellow clusters identify assets drifting toward historic 'Danger Zones'. 
+    Risk is calculated by the convergence of **Wear, Torque, and Ambient Heat**.
     """)
     
-    # NEW INSIGHT: 3D Scatter Plot
-    plot_df = df.head(800).copy()
-    plot_df['Status'] = plot_df['Machine_Failure'].map({1: 'Historical Failure', 0: 'Operational'})
-    
+    # 3D Scatter Plot
+    plot_df = df.head(1000).copy()
     fig = px.scatter_3d(plot_df, 
                         x='Tool_Wear_min', y='Torque_Nm', z='Air_Temp_K',
                         color='Status', 
-                        symbol='Status',
+                        color_discrete_map={
+                            "🔴 Historical Failure": "red", 
+                            "🟡 AT RISK (Action Required)": "yellow", 
+                            "🔵 Operational": "blue"
+                        },
                         opacity=0.7,
-                        color_discrete_map={'Historical Failure': 'red', 'Operational': 'blue'},
                         labels={'Tool_Wear_min': 'Wear', 'Torque_Nm': 'Torque', 'Air_Temp_K': 'Air Temp'})
-    
-    fig.update_layout(margin=dict(l=0, r=0, b=0, t=0))
+    fig.update_layout(margin=dict(l=0, r=0, b=0, t=0), legend_title_text='Asset Status')
     st.plotly_chart(fig, use_container_width=True)
     
     st.subheader("Scenario Override: Machine Inspection")
-    risk_list = df[(df['Tool_Wear_min'] > 150) & (df['Machine_Failure'] == 0)]['UDI'].tolist()
-    selected_udi = st.selectbox("Select Machine UDI for 'What-If' Analysis:", risk_list if risk_list else df['UDI'].head(10))
+    # Selection prioritizing at-risk machines
+    risk_list = at_risk_df['UDI'].tolist()
+    selected_udi = st.selectbox("Select Machine UDI for Analysis:", risk_list if risk_list else df['UDI'].head(10))
     
     selected_row = df[df['UDI'] == selected_udi].iloc[0]
     
-    # Restored Full Telemetry
-    display_cols = ["Air_Temp_K", "Process_Temp_K", "Rotational_Speed_rpm", "Torque_Nm", "Tool_Wear_min"]
+    # Restored Full Telemetry + Risk Score
+    st.write(f"**VANTAGE Health Profile: Machine {selected_udi}**")
+    display_cols = ["Risk_Score", "Air_Temp_K", "Process_Temp_K", "Rotational_Speed_rpm", "Torque_Nm", "Tool_Wear_min"]
     clean_df = selected_row[display_cols].to_frame().T
-    clean_df.columns = ["Air Temp (K)", "Process Temp (K)", "Speed (RPM)", "Torque (Nm)", "Wear (mins)"]
+    clean_df.columns = ["Risk Score (%)", "Air Temp (K)", "Process Temp (K)", "Speed (RPM)", "Torque (Nm)", "Wear (mins)"]
     st.dataframe(clean_df, hide_index=True, use_container_width=True)
     
     start_simulation = st.button("Run Business Impact Diagnostic", type="primary")
@@ -146,7 +165,7 @@ with right_col:
     st.subheader("Multi-Agent Analysis Log")
     
     if start_simulation:
-        with st.status("Initializing Analysis Engine...", expanded=True) as status:
+        with st.status("Analyzing Risks & Scenario Planning...", expanded=True) as status:
             st.write(f"**Agent 1 (Ingestion):** Analyzing Machine {selected_udi}...")
             
             final_state = app_engine.invoke({
@@ -164,3 +183,4 @@ with right_col:
         
         st.write("### 🚨 Formal Decision Directive")
         st.success(final_state["final_memo"])
+        
