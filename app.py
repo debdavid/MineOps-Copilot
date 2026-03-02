@@ -98,27 +98,23 @@ left_col, right_col = st.columns([1, 1.2])
 
 with left_col:
     st.subheader("VANTAGE Risk Heatmap")
+    
+    # MOVE EXPLANATION ABOVE THE GRAPH
+    st.info("""
+    **VANTAGE Intelligence:** Red zones indicate historic failure clusters. 
+    As assets drift toward these 'Danger Zones' (High Wear + High Torque), 
+    they are flagged as **At Risk** to prevent $1M engine seizures.
+    """)
+    
     st.caption("Visualizing the 'Non-Obvious Edges' of Heat & Stress")
     
-    # Heatmap helps "tether" to the exponential data clusters
+    # Heatmap logic
     heatmap_data = df.head(500)
     fig = px.density_heatmap(heatmap_data, x="Tool_Wear_min", y="Torque_Nm", 
                              z="Machine_Failure", histfunc="sum",
-                             labels={'Tool_Wear_min':'Tool Wear', 'Torque_Nm':'Torque'},
+                             labels={'Tool_Wear_min':'Tool Wear (mins)', 'Torque_Nm':'Torque (Nm)'},
                              color_continuous_scale="Reds")
     st.plotly_chart(fig, use_container_width=True)
-
-    st.warning("**VANTAGE Intelligence:** Red zones indicate historic failure clusters. Assets drifting into these zones require immediate 'Risk-Adjusted Decisions'.")
-    
-    st.subheader("Scenario Override: Machine Inspection")
-    risk_list = df[(df['Tool_Wear_min'] > 150) & (df['Machine_Failure'] == 0)]['UDI'].tolist()
-    selected_udi = st.selectbox("Select Machine UDI for 'What-If' Analysis:", risk_list if risk_list else df['UDI'].head(10))
-    
-    selected_row = df[df['UDI'] == selected_udi].iloc[0]
-    st.write("**Current Telemetry Payload:**")
-    st.dataframe(selected_row[["Air_Temp_K", "Torque_Nm", "Tool_Wear_min"]].to_frame().T, hide_index=True)
-    
-    start_simulation = st.button("Run Business Impact Diagnostic", type="primary")
 
 with right_col:
     st.subheader("Multi-Agent Analysis Log")
