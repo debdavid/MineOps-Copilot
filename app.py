@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go  # Required for the Bounding Box
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
 from langchain_groq import ChatGroq
@@ -63,8 +64,12 @@ app_engine = workflow.compile()
 def load_and_score_data():
     df = pd.read_csv("mining_sensor_stream.csv")
     
-    # Standardized Risk Scoring (Weighted Index)
-    # Normalized 0-100: Wear(40%), Torque(40%), Temp(20%)
+    # Statistical Thresholds (90th Percentile) for the Bounding Box
+    wear_threshold = df['Tool_Wear_min'].quantile(0.9)
+    torque_threshold = df['Torque_Nm'].quantile(0.9)
+    temp_threshold = df['Air_Temp_K'].quantile(0.9)
+    
+    # Standardized Risk Scoring
     df['Risk_Score'] = (
         (df['Tool_Wear_min'] / df['Tool_Wear_min'].max() * 40) +
         (df['Torque_Nm'] / df['Torque_Nm'].max() * 40) +
@@ -74,15 +79,15 @@ def load_and_score_data():
     def classify_status(row):
         if row['Machine_Failure'] == 1:
             return "Historical Failure"
-        # RISK THRESHOLD: Assets exceeding the 70th percentile of combined stress
+        # ADAPTIVE THRESHOLD: Flag assets with top 10% risk scores
         if row['Risk_Score'] >= 70:
             return "At Risk"
         return "Operational"
     
     df['Status'] = df.apply(classify_status, axis=1)
-    # Strategic Prioritization: High Risk assets moved to head of dataframe
+    # Executive Prioritization: High Risk first
     df = df.sort_values(by='Risk_Score', ascending=False).reset_index(drop=True)
-    return df
+    return df, wear_threshold, torque_threshold, temp_threshold
 
 # ==========================================
 # 5. EXECUTIVE DASHBOARD (VANTAGE)
@@ -92,7 +97,7 @@ st.set_page_config(page_title="VANTAGE | Operations Intelligence", layout="wide"
 st.title("VANTAGE: Operations Intelligence Engine")
 st.markdown("Strategic Orchestration Layer | Predictive Maintenance and Capital Protection.")
 
-df = load_and_score_data()
+df, w_thresh, t_thresh, tmp_thresh = load_and_score_data()
 
 # --- SECTION 1: KEY PERFORMANCE INDICATORS ---
 st.subheader("Executive Fleet Summary")
@@ -102,9 +107,10 @@ at_risk_df = df[df['Status'] == "At Risk"]
 exposure_value = len(at_risk_df) * 1.2
 
 col1.metric("Monitored Assets", len(df))
-col2.metric("Historical Failures", int(df['Machine_Failure'].sum()))
+col2.metric("Historical Failures", df['Machine_Failure'].sum())
 
 with col3:
+    # Stylized metric
     st.metric("Assets At Risk", len(at_risk_df), delta="Immediate Action Required", delta_color="inverse")
 
 col4.metric("Capital Exposed", f"${exposure_value:.1f}M", delta="Total Seizure Risk", delta_color="inverse")
@@ -117,15 +123,30 @@ left_col, right_col = st.columns([1, 1.2])
 with left_col:
     st.subheader("3D Risk Frontier Analysis")
     
-    st.info("""
-    STRATEGIC INSIGHT: The gold cluster identifies assets converging on critical failure thresholds. 
-    Risk is calculated via a Weighted Index of Mechanical Wear, Torque, and Ambient Temperature. 
-    Assets in the top-right-back quadrant represent high-probability failure scenarios.
+    st.info(f"""
+    STRATEGIC INSIGHT: The shaded red **Danger Zone** represents the high-probability failure quadrant. 
+    A **Convergence Point of Total Failure** occurs when Wear > {w_thresh:.0f} mins, 
+    Torque > {t_thresh:.1f} Nm, and Ambient Temp > {tmp_thresh:.1f} K. Assets drifting 
+    into this zone require prioritized isolation.
     """)
     
-    # 3D Scatter (Using Risk-Sorted Data for guaranteed visibility of At-Risk points)
+    # --- DANGER ZONE BOUNDING BOX logic ---
+    # We define a 3D mesh (cube) for the top 10% thresholds
+    mesh_size = 5 # Number of points along each edge
+    x_range = np.linspace(w_thresh, df['Tool_Wear_min'].max(), mesh_size)
+    y_range = np.linspace(t_thresh, df['Torque_Nm'].max(), mesh_size)
+    z_range = np.linspace(tmp_thresh, df['Air_Temp_K'].max(), mesh_size)
+    
+    X, Y, Z = np.meshgrid(x_range, y_range, z_range)
+    X = X.flatten()
+    Y = Y.flatten()
+    Z = Z.flatten()
+    
+    # 3D Scatter (Standard professional colors)
     plot_df = df.head(1000)
-    fig = px.scatter_3d(plot_df, 
+    
+    # Create the scatter figure first
+    scatter_fig = px.scatter_3d(plot_df, 
                         x='Tool_Wear_min', y='Torque_Nm', z='Air_Temp_K',
                         color='Status',
                         color_discrete_map={
@@ -139,16 +160,28 @@ with left_col:
                             'Torque_Nm': 'Torque (Nm)', 
                             'Air_Temp_K': 'Air Temp (K)'
                         })
-    fig.update_layout(margin=dict(l=0, r=0, b=0, t=0), legend_title_text='Asset Status')
-    st.plotly_chart(fig, use_container_width=True)
+    
+    # Add the Danger Zone Meshmplot to the scatter plot
+    danger_zone_fig = go.Figure(data=scatter_fig.data + [
+        go.Mesh3d(
+            x=X, y=Y, z=Z,
+            alphahull=0, # Convex hull for a neat cube
+            opacity=0.15, # Shaded
+            color='#FF4B4B', # Capgemini Business-Red
+            name='High-Probability Danger Zone',
+            showlegend=True
+        )
+    ])
+    
+    danger_zone_fig.update_layout(margin=dict(l=0, r=0, b=0, t=0), legend_title_text='Asset Status')
+    st.plotly_chart(danger_zone_fig, use_container_width=True)
     
     st.subheader("Asset Drill-down")
-    # Selection automatically surfaces At-Risk assets followed by global fleet
     target_list = df['UDI'].tolist()
     selected_udi = st.selectbox("Select Asset Identifier for Scenario Analysis:", target_list[:50])
     selected_row = df[df['UDI'] == selected_udi].iloc[0]
     
-    st.write(f"VANTAGE Health Profile: Asset {selected_udi}")
+    # Data Table Units Integration
     display_cols = ["Risk_Score", "Air_Temp_K", "Process_Temp_K", "Rotational_Speed_rpm", "Torque_Nm", "Tool_Wear_min"]
     clean_df = selected_row[display_cols].to_frame().T
     clean_df.columns = ["Risk Score (%)", "Air Temp (K)", "Process Temp (K)", "Rotational Speed (RPM)", "Torque (Nm)", "Tool Wear (mins)"]
