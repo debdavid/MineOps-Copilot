@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go 
-import numpy as np  # FIX: Restored missing NumPy import
+import numpy as np
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
 from langchain_groq import ChatGroq
@@ -122,10 +122,9 @@ with left_col:
     st.subheader("3D Risk Frontier Analysis")
     
     st.info(f"""
-    STRATEGIC INSIGHT: The shaded red **Danger Zone** represents the high-probability failure quadrant. 
-    A **Convergence Point of Total Failure** occurs when Wear > {w_thresh:.0f} mins, 
-    Torque > {t_thresh:.1f} Nm, and Ambient Temp > {tmp_thresh:.1f} K. Assets drifting 
-    into this zone require prioritized isolation.
+    STRATEGIC INSIGHT: The shaded red Danger Zone represents the high-probability failure quadrant. 
+    Risk is mathematically confirmed when Tool Wear exceeds {w_thresh:.0f} mins, 
+    Torque exceeds {t_thresh:.1f} Nm, and Ambient Temp > {tmp_thresh:.1f} K.
     """)
     
     # --- DANGER ZONE BOUNDING BOX logic ---
@@ -154,7 +153,8 @@ with left_col:
                             'Air_Temp_K': 'Air Temp (K)'
                         })
     
-    danger_zone_fig = go.Figure(data=scatter_fig.data + [
+    # THE FIX: Convert scatter_fig.data (tuple) to a list for concatenation
+    danger_zone_fig = go.Figure(data=list(scatter_fig.data) + [
         go.Mesh3d(
             x=X, y=Y, z=Z,
             alphahull=0, 
