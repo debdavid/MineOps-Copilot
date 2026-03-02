@@ -7,7 +7,6 @@ from dotenv import load_dotenv
 
 # 1. Initialize AI and Environment
 load_dotenv()
-# Lowered temperature to 0.1 to force the AI to be highly analytical and formal
 llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.1) 
 
 class AgentState(TypedDict):
@@ -15,21 +14,21 @@ class AgentState(TypedDict):
     diagnostic_report: str
     final_memo: str
 
-# 2. Define the Agents (Nodes) - UPGRADED PROMPTS
+# 2. Define the Agents (Nodes)
 def telemetry_ingestion(state: AgentState):
     return {"sensor_data": state["sensor_data"]}
 
 def reliability_analysis(state: AgentState):
     prompt = f"""You are a Reliability Analyst for a mining operation. Review this equipment sensor data and provide a clear, business-friendly summary of the mechanical failure. 
-    Avoid overly dense engineering jargon. Focus on what component failed, the severity, and the immediate operational impact.
+    Focus on what component failed, the severity, and the immediate operational impact.
     Data: {state['sensor_data']}"""
     response = llm.invoke(prompt)
     return {"diagnostic_report": response.content}
 
 def operations_communication(state: AgentState):
     prompt = f"""You are a Mine Control Room Supervisor. Write a formal shift handover memo based on the following diagnostic. 
-    Output ONLY the memo text. Do not include conversational filler like "Here is the memo" or "Sure". 
-    Use professional, authoritative language suitable for heavy industry. Focus on isolation protocols, safety boundaries, and the required maintenance work order.
+    Output ONLY the memo text. Do not include conversational filler. 
+    Use professional, authoritative language. Focus on isolation protocols and safety boundaries.
     Diagnostic: {state['diagnostic_report']}"""
     response = llm.invoke(prompt)
     return {"final_memo": response.content}
@@ -67,8 +66,14 @@ critical_failures = df['Machine_Failure'].sum()
 avg_temp = df['Air_Temp_K'].mean()
 avg_wear = df['Tool_Wear_min'].mean()
 
+# Updated logic: Professional status indicators instead of confusing arrows
 col1.metric("Monitored Assets", total_machines)
-col2.metric("Critical Failures", critical_failures, delta="Attention Required", delta_color="off")
+
+if critical_failures > 0:
+    col2.metric("Critical Failures", critical_failures, delta="ACTION REQUIRED", delta_color="inverse")
+else:
+    col2.metric("Critical Failures", critical_failures, delta="Operational", delta_color="normal")
+
 col3.metric("Avg Fleet Temp (K)", f"{avg_temp:.1f}")
 col4.metric("Avg Tool Wear (mins)", f"{avg_wear:.0f}")
 
@@ -88,7 +93,6 @@ with left_col:
         failing_machines_df['UDI'].tolist()
     )
     
-    # Isolate the specific row and format it for the business user
     selected_row = df[df['UDI'] == selected_udi].iloc[0]
     st.markdown("**Selected Machine Telemetry:**")
     
@@ -122,4 +126,3 @@ with right_col:
         
         st.write("### Formal Shift Handover Protocol")
         st.success(final_state["final_memo"])
-        
