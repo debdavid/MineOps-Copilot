@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px  # New import for Heatmap
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
 from langchain_groq import ChatGroq
@@ -19,7 +20,6 @@ def telemetry_ingestion(state: AgentState):
     return {"sensor_data": state["sensor_data"]}
 
 def reliability_analysis(state: AgentState):
-    # This Agent now performs SCENARIO PLANNING for Business Impact
     prompt = f"""
     You are a Senior Reliability Engineer. Analyze this telemetry and perform a 
     Risk-Adjusted Diagnostic using this structure:
@@ -35,7 +35,6 @@ def reliability_analysis(state: AgentState):
     return {"diagnostic_report": response.content}
 
 def operations_communication(state: AgentState):
-    # This Agent ORCHESTRATES the final DECISION Recommendation
     prompt = f"""
     You are a Mine Control Room Supervisor. Convert the diagnostic into a 
     Formal Decision Directive. 
@@ -69,7 +68,6 @@ st.set_page_config(page_title="VANTAGE | Ops Intelligence", layout="wide")
 st.title("VANTAGE: Operations Intelligence Engine")
 st.markdown("Predictive Orchestration Layer: Turning lagging facts into leading actions.")
 
-# --- DATA LOADING ---
 @st.cache_data
 def load_data():
     return pd.read_csv("mining_sensor_stream.csv")
@@ -80,10 +78,13 @@ st.subheader("Live Fleet Overview")
 col1, col2, col3, col4 = st.columns(4)
 
 total_machines = len(df)
-historical_failures = df['Machine_Failure'].sum() # LAGGING
+historical_failures = df['Machine_Failure'].sum()
 
-# LEADING INDICATOR: We identify "At Risk" machines (high wear + high torque)
-at_risk_count = len(df[(df['Tool_Wear_min'] > 180) & (df['Torque_Nm'] > 50) & (df['Machine_Failure'] == 0)])
+# LEADING INDICATOR: Analyzing the 'Complexity Curve'
+at_risk_count = len(df[
+    (df['Machine_Failure'] == 0) & 
+    ((df['Tool_Wear_min'] > 180) | (df['Torque_Nm'] > 60))
+])
 
 col1.metric("Monitored Assets", total_machines)
 col2.metric("Historical Failures", historical_failures, delta="Lagging Fact", delta_color="off")
@@ -96,22 +97,24 @@ st.divider()
 left_col, right_col = st.columns([1, 1.2])
 
 with left_col:
-    st.subheader("Predictive Stress Trends")
-    st.caption("Monitoring the 'Non-Obvious Edges' of Equipment Health")
+    st.subheader("VANTAGE Risk Heatmap")
+    st.caption("Visualizing the 'Non-Obvious Edges' of Heat & Stress")
     
-    chart_data = df[['Tool_Wear_min', 'Torque_Nm']].head(50).copy()
-    chart_data.columns = ["Tool Wear (Minutes)", "Torque (Newton-meters)"]
-    st.line_chart(chart_data)
+    # Create a simple heatmap of Torque vs Tool Wear
+    heatmap_data = df.head(500)
+    fig = px.density_heatmap(heatmap_data, x="Tool_Wear_min", y="Torque_Nm", 
+                             z="Machine_Failure", histfunc="sum",
+                             labels={'Tool_Wear_min':'Tool Wear', 'Torque_Nm':'Torque'},
+                             color_continuous_scale="Reds")
+    st.plotly_chart(fig, use_container_width=True)
 
     st.warning("""
-    **VANTAGE Intelligence:** High Tool Wear (Blue) combined with Torque spikes (Light Blue) 
-    creates a 'Complexity Curve' leading to engine seizure. Action is required before the fact.
+    **VANTAGE Intelligence:** Red zones indicate historic failure clusters. Machines currently 
+    drifting into these zones require immediate 'Risk-Adjusted Decisions'.
     """)
     
     st.subheader("Scenario Override: Machine Inspection")
-    # Show only machines currently at risk but not yet failed
     risk_list = df[(df['Tool_Wear_min'] > 150) & (df['Machine_Failure'] == 0)]['UDI'].tolist()
-    
     selected_udi = st.selectbox("Select Machine UDI for 'What-If' Analysis:", risk_list if risk_list else df['UDI'].head(10))
     
     selected_row = df[df['UDI'] == selected_udi].iloc[0]
@@ -128,8 +131,8 @@ with right_col:
             final_state = app_engine.invoke({"sensor_data": selected_row.to_string(), "diagnostic_report": "", "final_memo": ""})
             status.update(label="Scenario Analysis Complete.", state="complete", expanded=False)
         
-        st.write("### Business Impact Diagnostic")
+        st.write("### 🧠 Business Impact Diagnostic")
         st.info(final_state["diagnostic_report"])
         
-        st.write("### Formal Decision Directive")
+        st.write("### 🚨 Formal Decision Directive")
         st.success(final_state["final_memo"])
