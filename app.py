@@ -66,7 +66,7 @@ app_engine = workflow.compile()
 st.set_page_config(page_title="VANTAGE | Ops Intelligence", layout="wide")
 
 st.title("VANTAGE: Operations Intelligence Engine")
-st.markdown("Predictive Orchestration Layer: Identifying 'Non-Obvious Edges' before equipment failure.")
+st.markdown("Predictive Orchestration: Moving knowledge work up an abstraction layer.")
 
 @st.cache_data
 def load_data():
@@ -85,9 +85,19 @@ at_risk_count = len(df[
 ])
 
 col1.metric("Monitored Assets", total_machines)
-col2.metric("Historical Failures", historical_failures, help="Lagging Fact: Total failures already recorded.")
-col3.metric("Assets At Risk", at_risk_count, delta="Action Required", help="Leading Indicator: Currently trending toward failure.")
-col4.metric("Avg Fleet Temp (K)", f"{df['Air_Temp_K'].mean():.1f}")
+col2.metric("Historical Failures", historical_failures, help="Lagging Fact.")
+
+# FIX: Action Required is now RED when assets are at risk
+with col3:
+    st.metric("Assets At Risk", at_risk_count, help="Leading Indicator.")
+    if at_risk_count > 0:
+        st.markdown(":red[**⚠️ ACTION REQUIRED**]")
+    else:
+        st.markdown(":green[**✅ SYSTEM OPERATIONAL**]")
+
+# NEW INSIGHT: Financial Protection Metric
+protected_value = at_risk_count * 1.2 # Assuming $1.2M average repair cost saved
+col4.metric("Capital At Risk", f"${protected_value:.1f}M", delta="Critical Exposure", delta_color="inverse")
 
 st.divider()
 
@@ -95,19 +105,27 @@ st.divider()
 left_col, right_col = st.columns([1, 1.2])
 
 with left_col:
-    st.subheader("VANTAGE Risk Heatmap")
+    st.subheader("3.D. Risk Frontier Analysis")
     
     st.info("""
-    **VANTAGE Intelligence:** Red zones identify historic failure clusters. 
-    As assets drift into these **Danger Zones** (High Tool Wear + High Torque), 
-    the probability of a $1M engine seizure increases exponentially.
+    **Insight:** This 3D space visualizes the convergence of **Wear, Torque, and Heat**. 
+    Assets floating in the top-right-back corner have reached the physical 'Frontier' and are 
+    highest priority for intervention.
     """)
     
-    heatmap_data = df.head(500)
-    fig = px.density_heatmap(heatmap_data, x="Tool_Wear_min", y="Torque_Nm", 
-                             z="Machine_Failure", histfunc="sum",
-                             labels={'Tool_Wear_min':'Tool Wear (mins)', 'Torque_Nm':'Torque (Nm)'},
-                             color_continuous_scale="Reds")
+    # NEW INSIGHT: 3D Scatter Plot
+    plot_df = df.head(800).copy()
+    plot_df['Status'] = plot_df['Machine_Failure'].map({1: 'Historical Failure', 0: 'Operational'})
+    
+    fig = px.scatter_3d(plot_df, 
+                        x='Tool_Wear_min', y='Torque_Nm', z='Air_Temp_K',
+                        color='Status', 
+                        symbol='Status',
+                        opacity=0.7,
+                        color_discrete_map={'Historical Failure': 'red', 'Operational': 'blue'},
+                        labels={'Tool_Wear_min': 'Wear', 'Torque_Nm': 'Torque', 'Air_Temp_K': 'Air Temp'})
+    
+    fig.update_layout(margin=dict(l=0, r=0, b=0, t=0))
     st.plotly_chart(fig, use_container_width=True)
     
     st.subheader("Scenario Override: Machine Inspection")
@@ -115,9 +133,8 @@ with left_col:
     selected_udi = st.selectbox("Select Machine UDI for 'What-If' Analysis:", risk_list if risk_list else df['UDI'].head(10))
     
     selected_row = df[df['UDI'] == selected_udi].iloc[0]
-    st.write("**Full Machine Telemetry Payload:**")
     
-    # RESTORED FULL TELEMETRY TABLE
+    # Restored Full Telemetry
     display_cols = ["Air_Temp_K", "Process_Temp_K", "Rotational_Speed_rpm", "Torque_Nm", "Tool_Wear_min"]
     clean_df = selected_row[display_cols].to_frame().T
     clean_df.columns = ["Air Temp (K)", "Process Temp (K)", "Speed (RPM)", "Torque (Nm)", "Wear (mins)"]
@@ -130,8 +147,7 @@ with right_col:
     
     if start_simulation:
         with st.status("Initializing Analysis Engine...", expanded=True) as status:
-            # RESTORED AGENT VISIBILITY
-            st.write(f"**Agent 1 (Ingestion):** Extracting payload for Machine {selected_udi}...")
+            st.write(f"**Agent 1 (Ingestion):** Analyzing Machine {selected_udi}...")
             
             final_state = app_engine.invoke({
                 "sensor_data": selected_row.to_string(), 
@@ -139,11 +155,10 @@ with right_col:
                 "final_memo": ""
             })
             
-            st.write("**Agent 2 (Reliability):** Running Scenario Planning & Risk Analysis...")
-            st.write("**Agent 3 (Supervisor):** Generating Formal Decision Directive...")
-            status.update(label="Analysis Complete. Audited and Logged.", state="complete", expanded=False)
+            st.write("**Agent 2 (Reliability):** Running Scenario Planning...")
+            st.write("**Agent 3 (Supervisor):** Finalizing Decision Directive...")
+            status.update(label="Analysis Complete.", state="complete", expanded=False)
         
-        # CLEAN TYPOGRAPHY
         st.write("### 🧠 Business Impact Diagnostic")
         st.info(final_state["diagnostic_report"])
         
