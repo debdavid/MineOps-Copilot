@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go  # Required for the Bounding Box
+import plotly.graph_objects as go 
+import numpy as np  # FIX: Restored missing NumPy import
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
 from langchain_groq import ChatGroq
@@ -79,13 +80,11 @@ def load_and_score_data():
     def classify_status(row):
         if row['Machine_Failure'] == 1:
             return "Historical Failure"
-        # ADAPTIVE THRESHOLD: Flag assets with top 10% risk scores
         if row['Risk_Score'] >= 70:
             return "At Risk"
         return "Operational"
     
     df['Status'] = df.apply(classify_status, axis=1)
-    # Executive Prioritization: High Risk first
     df = df.sort_values(by='Risk_Score', ascending=False).reset_index(drop=True)
     return df, wear_threshold, torque_threshold, temp_threshold
 
@@ -107,10 +106,9 @@ at_risk_df = df[df['Status'] == "At Risk"]
 exposure_value = len(at_risk_df) * 1.2
 
 col1.metric("Monitored Assets", len(df))
-col2.metric("Historical Failures", df['Machine_Failure'].sum())
+col2.metric("Historical Failures", int(df['Machine_Failure'].sum()))
 
 with col3:
-    # Stylized metric
     st.metric("Assets At Risk", len(at_risk_df), delta="Immediate Action Required", delta_color="inverse")
 
 col4.metric("Capital Exposed", f"${exposure_value:.1f}M", delta="Total Seizure Risk", delta_color="inverse")
@@ -131,28 +129,23 @@ with left_col:
     """)
     
     # --- DANGER ZONE BOUNDING BOX logic ---
-    # We define a 3D mesh (cube) for the top 10% thresholds
-    mesh_size = 5 # Number of points along each edge
+    mesh_size = 5 
     x_range = np.linspace(w_thresh, df['Tool_Wear_min'].max(), mesh_size)
     y_range = np.linspace(t_thresh, df['Torque_Nm'].max(), mesh_size)
     z_range = np.linspace(tmp_thresh, df['Air_Temp_K'].max(), mesh_size)
     
     X, Y, Z = np.meshgrid(x_range, y_range, z_range)
-    X = X.flatten()
-    Y = Y.flatten()
-    Z = Z.flatten()
+    X, Y, Z = X.flatten(), Y.flatten(), Z.flatten()
     
-    # 3D Scatter (Standard professional colors)
     plot_df = df.head(1000)
     
-    # Create the scatter figure first
     scatter_fig = px.scatter_3d(plot_df, 
                         x='Tool_Wear_min', y='Torque_Nm', z='Air_Temp_K',
                         color='Status',
                         color_discrete_map={
-                            "Historical Failure": "#FF0000", # Red
-                            "At Risk": "#FFD700",           # Gold
-                            "Operational": "#0000FF"        # Blue
+                            "Historical Failure": "#FF0000", 
+                            "At Risk": "#FFD700",           
+                            "Operational": "#0000FF"        
                         },
                         opacity=0.7,
                         labels={
@@ -161,13 +154,12 @@ with left_col:
                             'Air_Temp_K': 'Air Temp (K)'
                         })
     
-    # Add the Danger Zone Meshmplot to the scatter plot
     danger_zone_fig = go.Figure(data=scatter_fig.data + [
         go.Mesh3d(
             x=X, y=Y, z=Z,
-            alphahull=0, # Convex hull for a neat cube
-            opacity=0.15, # Shaded
-            color='#FF4B4B', # Capgemini Business-Red
+            alphahull=0, 
+            opacity=0.15, 
+            color='#FF4B4B', 
             name='High-Probability Danger Zone',
             showlegend=True
         )
@@ -181,7 +173,6 @@ with left_col:
     selected_udi = st.selectbox("Select Asset Identifier for Scenario Analysis:", target_list[:50])
     selected_row = df[df['UDI'] == selected_udi].iloc[0]
     
-    # Data Table Units Integration
     display_cols = ["Risk_Score", "Air_Temp_K", "Process_Temp_K", "Rotational_Speed_rpm", "Torque_Nm", "Tool_Wear_min"]
     clean_df = selected_row[display_cols].to_frame().T
     clean_df.columns = ["Risk Score (%)", "Air Temp (K)", "Process Temp (K)", "Rotational Speed (RPM)", "Torque (Nm)", "Tool Wear (mins)"]
