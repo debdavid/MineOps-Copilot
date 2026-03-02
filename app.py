@@ -52,6 +52,14 @@ st.set_page_config(page_title="VANTAGE | Ops Intelligence", layout="wide")
 st.title("VANTAGE: Operations Intelligence Engine")
 st.markdown("Multi-agent orchestration layer for industrial reliability and shift handover.")
 
+# --- DATA LOADING (CRITICAL FIX) ---
+@st.cache_data
+def load_data():
+    # Ensure this file exists in your folder!
+    return pd.read_csv("mining_sensor_stream.csv")
+
+df = load_data()
+
 # --- SECTION 1: TOP KPI DASHBOARD ---
 st.subheader("Live Fleet Overview")
 col1, col2, col3, col4 = st.columns(4)
@@ -63,11 +71,9 @@ avg_wear = df['Tool_Wear_min'].mean()
 
 col1.metric("Monitored Assets", total_machines)
 
-# THE ARROW-FREE FIX:
 with col2:
     st.metric("Critical Failures", critical_failures)
     if critical_failures > 0:
-        # Using markdown with a custom color tag kills the arrow and keeps the red warning
         st.markdown(":red[**⚠️ ACTION REQUIRED**]")
     else:
         st.markdown(":green[**✅ SYSTEM OPERATIONAL**]")
@@ -81,15 +87,19 @@ st.divider()
 left_col, right_col = st.columns([1, 1.2])
 
 with left_col:
-    # Header and Axis Labels sitting tight together
     st.subheader("Mechanical Stress Trends")
     st.caption("Y-Axis: Value | X-Axis: Time/Data Points")
     
-    # Clean Legend Names (No Underscores)
     chart_data = df[['Tool_Wear_min', 'Torque_Nm']].head(50).copy()
     chart_data.columns = ["Tool Wear (Minutes)", "Torque (Newton-meters)"]
     
     st.line_chart(chart_data)
+
+    # Added Professional Explanation
+    st.info("""
+    **VANTAGE Analysis:** This trend monitors the relationship between mechanical force (Torque) and physical degradation (Tool Wear). 
+    Spikes in Torque combined with high Tool Wear indicate a high probability of **Overstrain Failure**.
+    """)
     
     st.subheader("Manual Diagnostic Override")
     failing_machines_df = df[df['Machine_Failure'] == 1]
