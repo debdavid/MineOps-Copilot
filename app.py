@@ -66,13 +66,13 @@ critical_failures = df['Machine_Failure'].sum()
 avg_temp = df['Air_Temp_K'].mean()
 avg_wear = df['Tool_Wear_min'].mean()
 
-# Updated logic: Professional status indicators instead of confusing arrows
 col1.metric("Monitored Assets", total_machines)
 
+# CLEAN ALERT: No confusing arrows, just a professional warning sign
 if critical_failures > 0:
-    col2.metric("Critical Failures", critical_failures, delta="ACTION REQUIRED", delta_color="inverse")
+    col2.error(f"⚠️ {critical_failures} FAILURES: ACTION REQUIRED")
 else:
-    col2.metric("Critical Failures", critical_failures, delta="Operational", delta_color="normal")
+    col2.success("✅ SYSTEM OPERATIONAL")
 
 col3.metric("Avg Fleet Temp (K)", f"{avg_temp:.1f}")
 col4.metric("Avg Tool Wear (mins)", f"{avg_wear:.0f}")
@@ -83,8 +83,14 @@ st.divider()
 left_col, right_col = st.columns([1, 1.2])
 
 with left_col:
-    st.subheader("Equipment Wear & Torque Trends")
-    st.line_chart(df[['Tool_Wear_min', 'Torque_Nm']].head(50))
+    st.subheader("Mechanical Stress Trends")
+    
+    # CLEAN LEGEND: Renaming columns for the graph
+    chart_data = df[['Tool_Wear_min', 'Torque_Nm']].head(50).copy()
+    chart_data.columns = ["Tool Wear (Minutes)", "Torque (Newton-meters)"]
+    
+    st.line_chart(chart_data)
+    st.caption("Y-Axis: Value | X-Axis: Time/Data Points")
     
     st.subheader("Manual Diagnostic Override")
     failing_machines_df = df[df['Machine_Failure'] == 1]
