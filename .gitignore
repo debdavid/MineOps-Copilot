@@ -1,0 +1,9 @@
+# Ignore the secret keys
+.env
+
+# Ignore the heavy quarantine zone
+venv/
+
+# Ignore Mac junk files
+.DS_Store
+__pycache__/
