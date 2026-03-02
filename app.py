@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px  # New import for Heatmap
+import plotly.express as px
 from typing import TypedDict
 from langgraph.graph import StateGraph, START, END
 from langchain_groq import ChatGroq
@@ -100,7 +100,7 @@ with left_col:
     st.subheader("VANTAGE Risk Heatmap")
     st.caption("Visualizing the 'Non-Obvious Edges' of Heat & Stress")
     
-    # Create a simple heatmap of Torque vs Tool Wear
+    # Heatmap helps "tether" to the exponential data clusters
     heatmap_data = df.head(500)
     fig = px.density_heatmap(heatmap_data, x="Tool_Wear_min", y="Torque_Nm", 
                              z="Machine_Failure", histfunc="sum",
@@ -108,10 +108,7 @@ with left_col:
                              color_continuous_scale="Reds")
     st.plotly_chart(fig, use_container_width=True)
 
-    st.warning("""
-    **VANTAGE Intelligence:** Red zones indicate historic failure clusters. Machines currently 
-    drifting into these zones require immediate 'Risk-Adjusted Decisions'.
-    """)
+    st.warning("**VANTAGE Intelligence:** Red zones indicate historic failure clusters. Assets drifting into these zones require immediate 'Risk-Adjusted Decisions'.")
     
     st.subheader("Scenario Override: Machine Inspection")
     risk_list = df[(df['Tool_Wear_min'] > 150) & (df['Machine_Failure'] == 0)]['UDI'].tolist()
