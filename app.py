@@ -15,7 +15,7 @@ class AgentState(TypedDict):
     diagnostic_report: str
     final_memo: str
 
-# 2. Define the Agents (Nodes) - "Snappy" Prompts for high-stress decision making
+# 2. Define the Agents (Nodes)
 def telemetry_ingestion(state: AgentState):
     return {"sensor_data": state["sensor_data"]}
 
@@ -79,9 +79,6 @@ col1, col2, col3, col4 = st.columns(4)
 
 total_machines = len(df)
 historical_failures = df['Machine_Failure'].sum()
-
-# LEADING INDICATOR: Analyzing the 'Complexity Curve'
-# Flagging machines hitting historic danger thresholds (Wear > 180 or Torque > 60)
 at_risk_count = len(df[
     (df['Machine_Failure'] == 0) & 
     ((df['Tool_Wear_min'] > 180) | (df['Torque_Nm'] > 60))
@@ -89,7 +86,7 @@ at_risk_count = len(df[
 
 col1.metric("Monitored Assets", total_machines)
 col2.metric("Historical Failures", historical_failures, help="Lagging Fact: Total failures already recorded.")
-col3.metric("Assets At Risk", at_risk_count, delta="Action Required", help="Leading Indicator: Assets currently trending toward failure.")
+col3.metric("Assets At Risk", at_risk_count, delta="Action Required", help="Leading Indicator: Currently trending toward failure.")
 col4.metric("Avg Fleet Temp (K)", f"{df['Air_Temp_K'].mean():.1f}")
 
 st.divider()
@@ -100,16 +97,12 @@ left_col, right_col = st.columns([1, 1.2])
 with left_col:
     st.subheader("VANTAGE Risk Heatmap")
     
-    # UI FIX: Explanation placed ABOVE the chart for clarity
     st.info("""
     **VANTAGE Intelligence:** Red zones identify historic failure clusters. 
     As assets drift into these **Danger Zones** (High Tool Wear + High Torque), 
     the probability of a $1M engine seizure increases exponentially.
     """)
     
-    st.caption("Visualizing the 'Non-Obvious Edges' of Heat & Stress")
-    
-    # Heatmap setup
     heatmap_data = df.head(500)
     fig = px.density_heatmap(heatmap_data, x="Tool_Wear_min", y="Torque_Nm", 
                              z="Machine_Failure", histfunc="sum",
@@ -118,13 +111,17 @@ with left_col:
     st.plotly_chart(fig, use_container_width=True)
     
     st.subheader("Scenario Override: Machine Inspection")
-    # Show machines at risk
     risk_list = df[(df['Tool_Wear_min'] > 150) & (df['Machine_Failure'] == 0)]['UDI'].tolist()
     selected_udi = st.selectbox("Select Machine UDI for 'What-If' Analysis:", risk_list if risk_list else df['UDI'].head(10))
     
     selected_row = df[df['UDI'] == selected_udi].iloc[0]
-    st.write("**Current Telemetry Payload:**")
-    st.dataframe(selected_row[["Air_Temp_K", "Torque_Nm", "Tool_Wear_min"]].to_frame().T, hide_index=True)
+    st.write("**Full Machine Telemetry Payload:**")
+    
+    # RESTORED FULL TELEMETRY TABLE
+    display_cols = ["Air_Temp_K", "Process_Temp_K", "Rotational_Speed_rpm", "Torque_Nm", "Tool_Wear_min"]
+    clean_df = selected_row[display_cols].to_frame().T
+    clean_df.columns = ["Air Temp (K)", "Process Temp (K)", "Speed (RPM)", "Torque (Nm)", "Wear (mins)"]
+    st.dataframe(clean_df, hide_index=True, use_container_width=True)
     
     start_simulation = st.button("Run Business Impact Diagnostic", type="primary")
 
@@ -132,10 +129,21 @@ with right_col:
     st.subheader("Multi-Agent Analysis Log")
     
     if start_simulation:
-        with st.status("Analyzing Risks & Scenario Planning...", expanded=True) as status:
-            final_state = app_engine.invoke({"sensor_data": selected_row.to_string(), "diagnostic_report": "", "final_memo": ""})
-            status.update(label="Scenario Analysis Complete.", state="complete", expanded=False)
+        with st.status("Initializing Analysis Engine...", expanded=True) as status:
+            # RESTORED AGENT VISIBILITY
+            st.write(f"**Agent 1 (Ingestion):** Extracting payload for Machine {selected_udi}...")
+            
+            final_state = app_engine.invoke({
+                "sensor_data": selected_row.to_string(), 
+                "diagnostic_report": "", 
+                "final_memo": ""
+            })
+            
+            st.write("**Agent 2 (Reliability):** Running Scenario Planning & Risk Analysis...")
+            st.write("**Agent 3 (Supervisor):** Generating Formal Decision Directive...")
+            status.update(label="Analysis Complete. Audited and Logged.", state="complete", expanded=False)
         
+        # CLEAN TYPOGRAPHY
         st.write("### 🧠 Business Impact Diagnostic")
         st.info(final_state["diagnostic_report"])
         
