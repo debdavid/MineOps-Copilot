@@ -66,16 +66,13 @@ critical_failures = df['Machine_Failure'].sum()
 avg_temp = df['Air_Temp_K'].mean()
 avg_wear = df['Tool_Wear_min'].mean()
 
+# Updated logic: Professional status indicators instead of confusing arrows
 col1.metric("Monitored Assets", total_machines)
 
-# REVERTED STYLE: Using Metric but removing the delta parameter to kill the arrow
 if critical_failures > 0:
-    col2.metric("Critical Failures", critical_failures, help="Immediate Maintenance Required")
-    # Using markdown to create a custom red label without an arrow
-    col2.markdown(f":red[⚠️ {critical_failures} FAILURES: ACTION REQUIRED]")
+    col2.metric("Critical Failures", critical_failures, delta="ACTION REQUIRED", delta_color="inverse")
 else:
-    col2.metric("Critical Failures", critical_failures)
-    col2.markdown(":green[✅ SYSTEM OPERATIONAL]")
+    col2.metric("Critical Failures", critical_failures, delta="Operational", delta_color="normal")
 
 col3.metric("Avg Fleet Temp (K)", f"{avg_temp:.1f}")
 col4.metric("Avg Tool Wear (mins)", f"{avg_wear:.0f}")
@@ -86,15 +83,8 @@ st.divider()
 left_col, right_col = st.columns([1, 1.2])
 
 with left_col:
-    st.subheader("Mechanical Stress Trends")
-    # DESIGNATED AXES LABELS: Sitting right under the heading
-    st.caption("Y-Axis: Value | X-Axis: Time/Data Points")
-    
-    # CLEAN LEGEND: Renaming columns for the graph
-    chart_data = df[['Tool_Wear_min', 'Torque_Nm']].head(50).copy()
-    chart_data.columns = ["Tool Wear (Minutes)", "Torque (Newton-meters)"]
-    
-    st.line_chart(chart_data)
+    st.subheader("Equipment Wear & Torque Trends")
+    st.line_chart(df[['Tool_Wear_min', 'Torque_Nm']].head(50))
     
     st.subheader("Manual Diagnostic Override")
     failing_machines_df = df[df['Machine_Failure'] == 1]
