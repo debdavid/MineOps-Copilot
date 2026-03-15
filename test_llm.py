@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 
-# 1. Unloack and load the API key from your .env file
+# 1. Unloack and load the API key from .env file
 load_dotenv()
 
 print("Attempting to connect to the Groq AI servers...")
