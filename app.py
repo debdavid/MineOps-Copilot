@@ -656,272 +656,442 @@ demo_df = demo_df.sort_values(
 ).reset_index(drop=True)
 
 
+
 # ============================================================
-# 7. BUSINESS-FACING INTERVIEW DEMO
+# 7. APP NAVIGATION
 # ============================================================
 
-st.title(
+page = st.sidebar.radio(
+    "Navigation",
+    ["Operations Dashboard", "Reliability Workspace"],
+)
+
+st.sidebar.caption(
     "VANTAGE | MineOps Copilot"
 )
 
 
+# ============================================================
+# 8. OPERATIONS DASHBOARD
+# ============================================================
 
+if page == "Operations Dashboard":
 
-# ------------------------------------------------------------
-# 7A. FLEET OVERVIEW
-# ------------------------------------------------------------
-
-st.subheader(
-    "Fleet Overview"
-)
-
-review_df = demo_df[
-    demo_df["Status"]
-    == "Review Required"
-]
-
-monitor_df = demo_df[
-    demo_df["Status"]
-    == "Monitor"
-]
-
-c1, c2, c3 = st.columns(3)
-
-c1.metric(
-    "Assets monitored",
-    len(demo_df),
-)
-
-c2.metric(
-    "Require review",
-    len(review_df),
-)
-
-c3.metric(
-    "Continue monitoring",
-    len(monitor_df),
-)
-
-if len(review_df) > 0:
-    st.warning(
-        f"{len(review_df)} assets require reliability review."
+    st.title(
+        "VANTAGE | MineOps Copilot"
     )
+
+    st.subheader(
+        "Fleet Overview"
+    )
+
+    review_df = demo_df[
+        demo_df["Status"]
+        == "Review Required"
+    ]
+
+    monitor_df = demo_df[
+        demo_df["Status"]
+        == "Monitor"
+    ]
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.metric(
+        "Assets monitored",
+        len(demo_df),
+    )
+
+    c2.metric(
+        "Require review",
+        len(review_df),
+    )
+
+    c3.metric(
+        "Continue monitoring",
+        len(monitor_df),
+    )
+
+    if len(review_df) > 0:
+        st.warning(
+            f"{len(review_df)} assets require reliability review."
+        )
+    else:
+        st.success(
+            "No assets currently require reliability review."
+        )
+
+    st.subheader(
+        "Priority Assets"
+    )
+
+    priority_table = (
+        demo_df[
+            [
+                "UDI",
+                "Risk_Priority_Score",
+                "Status",
+            ]
+        ]
+        .head(10)
+        .copy()
+    )
+
+    priority_table.columns = [
+        "Asset ID",
+        "Risk priority score (%)",
+        "Status",
+    ]
+
+    st.dataframe(
+        priority_table,
+        hide_index=True,
+        use_container_width=True,
+    )
+
+    st.divider()
+
+    st.subheader(
+        "Asset Status"
+    )
+
+    asset_options = demo_df.index.tolist()
+
+    selected_index = st.selectbox(
+        "Select asset:",
+        options=asset_options,
+        format_func=lambda i: str(demo_df.loc[i, "UDI"]),
+        key="dashboard_asset_index",
+    )
+
+    selected_row = demo_df.loc[
+        selected_index
+    ].copy()
+
+    selected_udi = selected_row["UDI"]
+
+    risk_score = float(
+        selected_row[
+            "Risk_Priority_Score"
+        ]
+    )
+
+    threshold_percent = (
+        metrics["alert_threshold"]
+        * 100
+    )
+
+    status = (
+        selected_row["Status"]
+    )
+
+    r1, r2, r3 = st.columns(3)
+
+    r1.metric(
+        "Risk priority score",
+        f"{risk_score:.1f}%",
+    )
+
+    r2.metric(
+        "Review threshold",
+        f"{threshold_percent:.1f}%",
+    )
+
+    r3.metric(
+        "Status",
+        status,
+    )
+
+    if status == "Review Required":
+        st.warning(
+            "Reliability review required."
+        )
+    else:
+        st.success(
+            "Monitor"
+        )
+
+    st.markdown(
+        "### Telemetry"
+    )
+
+    st.caption(
+        f"Asset {selected_udi}"
+    )
+
+    telemetry_context = build_telemetry_context(
+        full_df=full_df,
+        selected_row=selected_row,
+    )
+
+    st.table(
+        telemetry_context.set_index(
+            "Signal"
+        )
+    )
+
+    with st.popover(
+        "What does 'Typical range' mean?"
+    ):
+        st.write(
+            "This shows where most readings in the reference dataset usually fall. "
+            "A reading outside this range is unusual and may deserve attention, "
+            "but it does not automatically mean the equipment is unsafe or failing."
+        )
+
+
+# ============================================================
+# 9. RELIABILITY WORKSPACE
+# ============================================================
+
 else:
-    st.success(
-        "No assets currently require reliability review."
+
+    st.title(
+        "Reliability Workspace"
     )
 
+    review_df = demo_df[
+        demo_df["Status"]
+        == "Review Required"
+    ].copy()
 
-# ------------------------------------------------------------
-# 7B. PRIORITY ASSETS
-# ------------------------------------------------------------
+    st.subheader(
+        "Review Queue"
+    )
 
-st.subheader(
-    "Priority Assets"
-)
-
-priority_table = (
-    demo_df[
+    queue = review_df[
         [
             "UDI",
             "Risk_Priority_Score",
             "Status",
         ]
+    ].copy()
+
+    queue.columns = [
+        "Asset ID",
+        "Risk priority score (%)",
+        "Status",
     ]
-    .head(10)
-    .copy()
-)
 
-priority_table.columns = [
-    "Asset ID",
-    "Risk priority score (%)",
-    "Status",
-]
-
-st.dataframe(
-    priority_table,
-    hide_index=True,
-    use_container_width=True,
-)
-
-
-
-# ------------------------------------------------------------
-# 7C. ASSET REVIEW
-# ------------------------------------------------------------
-
-st.divider()
-
-st.subheader(
-    "Asset Status"
-)
-
-# Use the selected row index as the single source of truth for the
-# entire Asset Status / Telemetry / Reliability Brief section.
-asset_options = demo_df.index.tolist()
-
-selected_index = st.selectbox(
-    "Select asset:",
-    options=asset_options,
-    format_func=lambda i: str(demo_df.loc[i, "UDI"]),
-    key="selected_asset_index",
-)
-
-selected_row = demo_df.loc[selected_index].copy()
-selected_udi = selected_row["UDI"]
-
-risk_score = float(
-    selected_row[
-        "Risk_Priority_Score"
-    ]
-)
-
-threshold_percent = (
-    metrics["alert_threshold"]
-    * 100
-)
-
-status = (
-    selected_row["Status"]
-)
-
-r1, r2, r3 = st.columns(3)
-
-r1.metric(
-    "Risk priority score",
-    f"{risk_score:.1f}%",
-)
-
-r2.metric(
-    "Review threshold",
-    f"{threshold_percent:.1f}%",
-)
-
-r3.metric(
-    "Status",
-    status,
-)
-
-if status == "Review Required":
-    st.warning("Reliability review required.")
-else:
-    st.success("Monitor")
-
-
-# ------------------------------------------------------------
-# 7D. TELEMETRY
-# ------------------------------------------------------------
-
-st.markdown(
-    "### Telemetry"
-)
-st.caption(f"Asset {selected_udi}")
-
-# Rebuild telemetry from the newly selected row on every Streamlit rerun.
-telemetry_context = build_telemetry_context(
-    full_df=full_df,
-    selected_row=selected_row,
-)
-
-# A static table is intentional here: it renders afresh for each selected
-# asset and is easier to scan than an interactive dataframe for five signals.
-st.table(
-    telemetry_context.set_index("Signal")
-)
-
-with st.popover("What does 'Typical range' mean?"):
-    st.write(
-        "This shows where most readings in the reference dataset usually fall. "
-        "A reading outside this range is unusual and may deserve attention, "
-        "but it does not automatically mean the equipment is unsafe or failing."
+    st.dataframe(
+        queue,
+        hide_index=True,
+        use_container_width=True,
     )
 
+    if len(review_df) == 0:
+        st.success(
+            "No assets currently require reliability review."
+        )
+        st.stop()
 
-# ------------------------------------------------------------
-# 7E. AI BRIEF
-# ------------------------------------------------------------
+    st.divider()
 
-st.divider()
+    st.subheader(
+        "Asset Recommendation"
+    )
 
-st.subheader(
-    "Reliability Brief"
-)
+    review_asset_options = (
+        review_df.index.tolist()
+    )
 
+    selected_review_index = st.selectbox(
+        "Select asset for review:",
+        options=review_asset_options,
+        format_func=lambda i: str(review_df.loc[i, "UDI"]),
+        key="workspace_asset_index",
+    )
 
+    review_row = review_df.loc[
+        selected_review_index
+    ].copy()
 
-if st.button(
-    "Generate Brief",
-    type="primary",
-):
+    review_udi = review_row["UDI"]
 
-    telemetry_text = (
-        telemetry_context.to_string(
-            index=False
+    review_risk_score = float(
+        review_row[
+            "Risk_Priority_Score"
+        ]
+    )
+
+    review_threshold = (
+        metrics["alert_threshold"]
+        * 100
+    )
+
+    review_telemetry = build_telemetry_context(
+        full_df=full_df,
+        selected_row=review_row,
+    )
+
+    w1, w2 = st.columns(2)
+
+    w1.metric(
+        "Risk priority score",
+        f"{review_risk_score:.1f}%",
+    )
+
+    w2.metric(
+        "Review threshold",
+        f"{review_threshold:.1f}%",
+    )
+
+    st.table(
+        review_telemetry.set_index(
+            "Signal"
         )
     )
 
-    evidence = f"""
-Asset ID: {selected_udi}
-Risk priority score: {risk_score:.1f}%
-Model review threshold: {threshold_percent:.1f}%
-Status: {status}
+    if st.button(
+        "Generate Maintenance Recommendation",
+        type="primary",
+    ):
 
-Telemetry context:
-{telemetry_text}
-
-Important:
-- Synthetic AI4I industrial predictive-maintenance data.
-- Statistical reference ranges are not engineering safety limits.
-- Final maintenance action remains with authorised personnel.
-"""
-
-    with st.status(
-        "Preparing reliability brief...",
-        expanded=True,
-    ) as progress:
-
-        st.write(
-            "Quantitative model evidence prepared."
-        )
-
-        final_state = (
-            app_engine.invoke(
-                {
-                    "evidence": evidence,
-                    "explanation": "",
-                    "handover": "",
-                }
+        telemetry_text = (
+            review_telemetry.to_string(
+                index=False
             )
         )
 
-        st.write(
-            "AI explanation prepared."
+        recommendation_prompt = f"""
+You are supporting a mining reliability team.
+
+Use ONLY the evidence below.
+
+ASSET:
+Asset ID: {review_udi}
+Risk priority score: {review_risk_score:.1f}%
+Review threshold: {review_threshold:.1f}%
+Status: Review Required
+
+TELEMETRY CONTEXT:
+{telemetry_text}
+
+BOUNDARIES:
+- Do not diagnose a specific failure mode unless the evidence supports it.
+- Do not invent OEM limits, safety limits, repair costs or shutdown requirements.
+- Do not authorise isolation or maintenance.
+- Recommendations must remain decision support for authorised reliability personnel.
+
+Produce a concise operational recommendation with exactly these headings:
+
+PRIORITY:
+Choose High, Medium, or Low based on the evidence supplied.
+
+RECOMMENDED ACTION:
+State the next reasonable reliability action, such as inspect, trend, verify, or schedule review.
+
+FOCUS AREAS:
+Name the telemetry signals that deserve attention.
+
+RATIONALE:
+Explain briefly why this asset should be reviewed.
+
+DECISION OWNER:
+State that final action sits with authorised reliability / maintenance personnel.
+"""
+
+        recommendation, error = (
+            invoke_llm_with_fallback(
+                recommendation_prompt
+            )
         )
 
-        st.write(
-            "Draft handover prepared."
+        if recommendation is not None:
+            st.markdown(
+                "### Maintenance Recommendation"
+            )
+            st.info(
+                recommendation
+            )
+        else:
+            st.error(
+                "Recommendation service unavailable."
+            )
+            st.caption(
+                str(error)
+            )
+
+    st.divider()
+
+    st.subheader(
+        "Supervisor Fleet Summary"
+    )
+
+    st.write(
+        "Generate a concise fleet-level handover for the current review queue."
+    )
+
+    if st.button(
+        "Generate Fleet Handover"
+    ):
+
+        fleet_rows = []
+
+        for _, row in review_df.head(10).iterrows():
+
+            telemetry = build_telemetry_context(
+                full_df=full_df,
+                selected_row=row,
+            )
+
+            notable = telemetry[
+                telemetry["Flag"]
+                == "Review signal"
+            ]
+
+            notable_text = (
+                ", ".join(
+                    notable["Signal"].tolist()
+                )
+                if len(notable) > 0
+                else "no single telemetry signal outside the typical range"
+            )
+
+            fleet_rows.append(
+                f"Asset {row['UDI']}: "
+                f"risk priority score {row['Risk_Priority_Score']:.1f}%; "
+                f"notable signals: {notable_text}."
+            )
+
+        fleet_evidence = "\n".join(
+            fleet_rows
         )
 
-        progress.update(
-            label="Reliability brief ready.",
-            state="complete",
-            expanded=False,
+        fleet_prompt = f"""
+You are preparing a supervisor shift handover for a mining reliability team.
+
+CURRENT REVIEW QUEUE:
+{fleet_evidence}
+
+BOUNDARIES:
+- Do not invent failures, safety incidents, repair costs, work orders or engineering limits.
+- Do not authorise maintenance or isolation.
+- Prioritise the highest-risk assets first.
+
+Write:
+1. A two-sentence fleet summary.
+2. A short priority list of the top three assets requiring attention.
+3. One sentence on the recommended focus for the next shift.
+"""
+
+        fleet_summary, error = (
+            invoke_llm_with_fallback(
+                fleet_prompt
+            )
         )
 
-    st.markdown(
-        "### Assessment"
-    )
-
-    st.info(
-        final_state["explanation"]
-    )
-
-    st.markdown(
-        "### Shift Handover"
-    )
-
-    st.success(
-        final_state["handover"]
-    )
-
-st.divider()
+        if fleet_summary is not None:
+            st.markdown(
+                "### Fleet Handover"
+            )
+            st.success(
+                fleet_summary
+            )
+        else:
+            st.error(
+                "Fleet handover service unavailable."
+            )
+            st.caption(
+                str(error)
+            )
