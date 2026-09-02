@@ -663,7 +663,7 @@ demo_df = demo_df.sort_values(
 st.title("VANTAGE | MineOps Copilot")
 
 operations_tab, reliability_tab = st.tabs(
-    ["Operations Dashboard", "Reliability Workspace"]
+    ["Operations Dashboard", "Shift Handover"]
 )
 
 review_df = demo_df[
@@ -810,7 +810,7 @@ with operations_tab:
 
 with reliability_tab:
 
-    st.subheader("Reliability Workspace")
+    st.subheader("Shift Handover")
 
     review_df = demo_df[
         demo_df["Status"] == "Review Required"
