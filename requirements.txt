@@ -1,6 +1,8 @@
 streamlit
 pandas
+numpy
 plotly
+scikit-learn
 langgraph
 langchain-groq
 python-dotenv
