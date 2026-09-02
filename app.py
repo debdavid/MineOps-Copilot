@@ -336,32 +336,28 @@ def percentile_rank(
 
 def relative_band(percentile: float) -> str:
     """
-    Plain-language statistical context.
-    NOT an engineering safety classification.
+    Simple attention cue only.
     """
-    if percentile >= 95:
-        return "Very high relative to reference"
-    if percentile >= 90:
-        return "High relative to reference"
-    if percentile <= 5:
-        return "Very low relative to reference"
-    if percentile <= 10:
-        return "Low relative to reference"
-    return "Within typical reference range"
+    if percentile >= 90 or percentile <= 10:
+        return "Review signal"
+    return "Typical"
 
 
 def relative_position_text(
     percentile: float,
 ) -> str:
-    if percentile >= 99.5:
-        return "At or above the highest values in the reference data"
-    if percentile <= 0.5:
-        return "At or below the lowest values in the reference data"
-
-    return (
-        f"Higher than approximately "
-        f"{percentile:.0f}% of reference observations"
-    )
+    """
+    Plain-language comparison against the reference dataset.
+    """
+    if percentile >= 95:
+        return "Well above typical range"
+    if percentile >= 90:
+        return "Above typical range"
+    if percentile <= 5:
+        return "Well below typical range"
+    if percentile <= 10:
+        return "Below typical range"
+    return "Within typical range"
 
 
 def build_telemetry_context(
@@ -397,7 +393,7 @@ def build_telemetry_context(
                 "Current":
                     f"{value:.1f} {UNITS[feature]}",
 
-                "Reference range*":
+                "Typical range":
                     f"{q10:.1f}–{q90:.1f} "
                     f"{UNITS[feature]}",
 
@@ -406,7 +402,7 @@ def build_telemetry_context(
                         percentile
                     ),
 
-                "Interpretation":
+                "Flag":
                     relative_band(
                         percentile
                     ),
@@ -760,15 +756,19 @@ st.subheader(
     "Asset Status"
 )
 
-selected_udi = st.selectbox(
+# Use the selected row index as the single source of truth for the
+# entire Asset Status / Telemetry / Reliability Brief section.
+asset_options = demo_df.index.tolist()
+
+selected_index = st.selectbox(
     "Select asset:",
-    demo_df["UDI"].tolist(),
+    options=asset_options,
+    format_func=lambda i: str(demo_df.loc[i, "UDI"]),
+    key="selected_asset_index",
 )
 
-selected_row = demo_df[
-    demo_df["UDI"]
-    == selected_udi
-].iloc[0]
+selected_row = demo_df.loc[selected_index].copy()
+selected_udi = selected_row["UDI"]
 
 risk_score = float(
     selected_row[
@@ -815,22 +815,25 @@ else:
 st.markdown(
     "### Telemetry"
 )
+st.caption(f"Asset {selected_udi}")
 
+# Rebuild telemetry from the newly selected row on every Streamlit rerun.
 telemetry_context = build_telemetry_context(
-    full_df,
-    selected_row,
+    full_df=full_df,
+    selected_row=selected_row,
 )
 
-st.dataframe(
-    telemetry_context,
-    hide_index=True,
-    use_container_width=True,
+# A static table is intentional here: it renders afresh for each selected
+# asset and is easier to scan than an interactive dataframe for five signals.
+st.table(
+    telemetry_context.set_index("Signal")
 )
 
-with st.popover("Reference range"):
+with st.popover("What does 'Typical range' mean?"):
     st.write(
-        "Reference range shows the central 80% of values in the reference dataset "
-        "(10th–90th percentile). It is contextual, not an engineering or safety limit."
+        "This shows where most readings in the reference dataset usually fall. "
+        "A reading outside this range is unusual and may deserve attention, "
+        "but it does not automatically mean the equipment is unsafe or failing."
     )
 
 
@@ -858,7 +861,7 @@ if st.button(
     )
 
     evidence = f"""
-Asset ID: {selected_row['UDI']}
+Asset ID: {selected_udi}
 Risk priority score: {risk_score:.1f}%
 Model review threshold: {threshold_percent:.1f}%
 Status: {status}
@@ -932,101 +935,66 @@ with st.expander(
     "Technical Information"
 ):
 
+    st.markdown("#### Model validation summary")
+
+    detected_failures = metrics["true_positive"]
+    missed_failures = metrics["false_negative"]
+    actual_failures = detected_failures + missed_failures
+    false_alerts = metrics["false_positive"]
+
     st.markdown(
-        "#### Model validation"
-    )
-
-    t1, t2, t3, t4 = st.columns(
-        4
-    )
-
-    t1.metric(
-        "Test recall",
-        f"{metrics['recall']:.1%}",
-    )
-
-    t2.metric(
-        "Test precision",
-        f"{metrics['precision']:.1%}",
-    )
-
-    t3.metric(
-        "F2 score",
-        f"{metrics['f2']:.2f}",
-    )
-
-    t4.metric(
-        "Average precision",
-        f"{metrics['average_precision']:.2f}",
+        f"""
+- **Detected failures:** {detected_failures} of {actual_failures}
+- **Missed failures:** {missed_failures}
+- **False alerts:** {false_alerts}
+- **Recall:** {metrics['recall']:.1%}
+        """
     )
 
     st.write(
-        {
-            "True positives":
-                metrics["true_positive"],
-
-            "False positives":
-                metrics["false_positive"],
-
-            "False negatives":
-                metrics["false_negative"],
-
-            "True negatives":
-                metrics["true_negative"],
-        }
+        "The prototype was tuned to catch more potential failures, "
+        "accepting more false alerts as a trade-off. In a real mining "
+        "environment, the alert threshold would be calibrated with "
+        "site-specific failure data and reliability-engineering input."
     )
 
-    st.caption(
-        "The alert threshold is selected on validation data using F2, "
-        "which weights recall more heavily than precision. "
-        "A production mining threshold would require calibration with "
-        "site-specific failure data and reliability-engineering judgement."
-    )
+    st.markdown("#### Model design")
 
     st.markdown(
-        "#### Model design"
-    )
-
-    st.write(
         """
 - **Model:** Random Forest classifier
 - **Inputs:** equipment type, air temperature, process temperature,
   rotational speed, torque and tool wear
 - **Target:** historical machine-failure label
-- **Reason for this approach:** allows nonlinear relationships and
-  interactions to be learned from labelled examples rather than imposing
-  arbitrary manual feature weights
+- **Purpose:** learn relationships between multiple operating signals
+  without manually assigning arbitrary feature weights
         """
     )
+
+    st.markdown("#### System limitations")
 
     st.markdown(
-        "#### System Constraints"
-    )
-
-    st.write(
         """
-- Synthetic industrial dataset — not live Whitehaven telemetry
-- Demo data deliberately includes additional historical failure examples
-- Model score is a prioritisation signal, not a certified failure probability
-- Statistical ranges are not safety limits
+- Uses a synthetic industrial dataset rather than live mine telemetry
+- Demo data includes extra historical failure examples for demonstration
+- Risk priority score is a prioritisation signal, not a certified failure probability
+- Typical ranges are statistical reference ranges, not engineering or safety limits
 - No live SAP / Maximo integration
-- LLM does not authorise maintenance action
+- The generative-AI layer does not authorise maintenance action
         """
     )
 
-    st.markdown(
-        "#### Deployment Requirements"
-    )
+    st.markdown("#### Production requirements")
 
-    st.write(
+    st.markdown(
         """
 1. Replace synthetic data with site-specific historical telemetry.
 2. Validate sensor quality, timestamps and asset context.
-3. Retrain and test against actual maintenance / failure outcomes.
-4. Calibrate thresholds with reliability engineers.
-5. Measure false positives and false negatives in operational terms.
-6. Apply OEM and approved site operating limits where relevant.
+3. Retrain and test against actual maintenance and failure outcomes.
+4. Calibrate alert thresholds with reliability engineers.
+5. Evaluate false alerts and missed failures in operational terms.
+6. Apply approved manufacturer and site operating limits where relevant.
 7. Add monitoring, access controls and auditability.
-8. Pilot before broader operational deployment.
+8. Pilot the solution before wider operational deployment.
         """
     )
