@@ -657,6 +657,7 @@ demo_df = demo_df.sort_values(
 
 
 
+
 # ============================================================
 # 7. APP NAVIGATION
 # ============================================================
@@ -686,13 +687,11 @@ if page == "Operations Dashboard":
     )
 
     review_df = demo_df[
-        demo_df["Status"]
-        == "Review Required"
+        demo_df["Status"] == "Review Required"
     ]
 
     monitor_df = demo_df[
-        demo_df["Status"]
-        == "Monitor"
+        demo_df["Status"] == "Monitor"
     ]
 
     c1, c2, c3 = st.columns(3)
@@ -777,13 +776,10 @@ if page == "Operations Dashboard":
     )
 
     threshold_percent = (
-        metrics["alert_threshold"]
-        * 100
+        metrics["alert_threshold"] * 100
     )
 
-    status = (
-        selected_row["Status"]
-    )
+    status = selected_row["Status"]
 
     r1, r2, r3 = st.columns(3)
 
@@ -851,33 +847,8 @@ else:
     )
 
     review_df = demo_df[
-        demo_df["Status"]
-        == "Review Required"
+        demo_df["Status"] == "Review Required"
     ].copy()
-
-    st.subheader(
-        "Review Queue"
-    )
-
-    queue = review_df[
-        [
-            "UDI",
-            "Risk_Priority_Score",
-            "Status",
-        ]
-    ].copy()
-
-    queue.columns = [
-        "Asset ID",
-        "Risk priority score (%)",
-        "Status",
-    ]
-
-    st.dataframe(
-        queue,
-        hide_index=True,
-        use_container_width=True,
-    )
 
     if len(review_df) == 0:
         st.success(
@@ -885,10 +856,12 @@ else:
         )
         st.stop()
 
-    st.divider()
+    # --------------------------------------------------------
+    # 9A. SELECT ASSET FOR ACTION
+    # --------------------------------------------------------
 
     st.subheader(
-        "Asset Recommendation"
+        "Asset Action"
     )
 
     review_asset_options = (
@@ -896,9 +869,12 @@ else:
     )
 
     selected_review_index = st.selectbox(
-        "Select asset for review:",
+        "Select asset:",
         options=review_asset_options,
-        format_func=lambda i: str(review_df.loc[i, "UDI"]),
+        format_func=lambda i: (
+            f"{review_df.loc[i, 'UDI']}  |  "
+            f"{review_df.loc[i, 'Risk_Priority_Score']:.1f}%"
+        ),
         key="workspace_asset_index",
     )
 
@@ -915,8 +891,7 @@ else:
     )
 
     review_threshold = (
-        metrics["alert_threshold"]
-        * 100
+        metrics["alert_threshold"] * 100
     )
 
     review_telemetry = build_telemetry_context(
@@ -924,27 +899,23 @@ else:
         selected_row=review_row,
     )
 
-    w1, w2 = st.columns(2)
-
-    w1.metric(
-        "Risk priority score",
-        f"{review_risk_score:.1f}%",
+    # Show only concise context needed to act, not a duplicate dashboard.
+    st.caption(
+        f"Asset {review_udi} | Risk priority score {review_risk_score:.1f}%"
     )
 
-    w2.metric(
-        "Review threshold",
-        f"{review_threshold:.1f}%",
-    )
+    # --------------------------------------------------------
+    # 9B. AI MAINTENANCE RECOMMENDATION
+    # --------------------------------------------------------
 
-    st.table(
-        review_telemetry.set_index(
-            "Signal"
-        )
+    st.markdown(
+        "### Maintenance Recommendation"
     )
 
     if st.button(
-        "Generate Maintenance Recommendation",
+        "Generate Recommendation",
         type="primary",
+        key="generate_recommendation",
     ):
 
         telemetry_text = (
@@ -987,6 +958,9 @@ Name the telemetry signals that deserve attention.
 RATIONALE:
 Explain briefly why this asset should be reviewed.
 
+QUESTIONS FOR ENGINEER:
+List 2-3 checks or questions the reliability engineer should consider before deciding.
+
 DECISION OWNER:
 State that final action sits with authorised reliability / maintenance personnel.
 """
@@ -998,37 +972,130 @@ State that final action sits with authorised reliability / maintenance personnel
         )
 
         if recommendation is not None:
-            st.markdown(
-                "### Maintenance Recommendation"
-            )
-            st.info(
-                recommendation
-            )
+            st.session_state["maintenance_recommendation"] = recommendation
+            st.session_state["maintenance_recommendation_asset"] = review_udi
         else:
-            st.error(
-                "Recommendation service unavailable."
+            st.session_state["maintenance_recommendation"] = None
+            st.session_state["maintenance_recommendation_error"] = str(error)
+
+    if st.session_state.get("maintenance_recommendation"):
+        if st.session_state.get("maintenance_recommendation_asset") == review_udi:
+            st.info(
+                st.session_state["maintenance_recommendation"]
             )
-            st.caption(
-                str(error)
+
+    if (
+        st.session_state.get("maintenance_recommendation") is None
+        and st.session_state.get("maintenance_recommendation_error")
+    ):
+        st.error(
+            "Recommendation service unavailable."
+        )
+        st.caption(
+            st.session_state["maintenance_recommendation_error"]
+        )
+
+    # --------------------------------------------------------
+    # 9C. DRAFT WORK ORDER
+    # --------------------------------------------------------
+
+    st.markdown(
+        "### Draft Work Order"
+    )
+
+    if st.button(
+        "Generate Draft Work Order",
+        key="generate_work_order",
+    ):
+
+        prior_recommendation = st.session_state.get(
+            "maintenance_recommendation",
+            ""
+        )
+
+        work_order_prompt = f"""
+You are preparing a draft maintenance work-order description for review.
+
+ASSET:
+Asset ID: {review_udi}
+Risk priority score: {review_risk_score:.1f}%
+
+AI MAINTENANCE RECOMMENDATION:
+{prior_recommendation}
+
+TELEMETRY:
+{review_telemetry.to_string(index=False)}
+
+BOUNDARIES:
+- This is a draft only.
+- Do not invent a failure diagnosis.
+- Do not invent parts, costs, labour hours, shutdown duration, safety instructions or isolation requirements.
+- Do not authorise work.
+- Use concise professional maintenance language.
+
+FORMAT:
+ASSET:
+REASON FOR REVIEW:
+SUGGESTED INSPECTION SCOPE:
+TELEMETRY TO VERIFY:
+APPROVAL STATUS: Draft — reliability / maintenance approval required
+"""
+
+        work_order, error = (
+            invoke_llm_with_fallback(
+                work_order_prompt
             )
+        )
+
+        if work_order is not None:
+            st.session_state["draft_work_order"] = work_order
+            st.session_state["draft_work_order_asset"] = review_udi
+        else:
+            st.session_state["draft_work_order"] = None
+            st.session_state["draft_work_order_error"] = str(error)
+
+    if st.session_state.get("draft_work_order"):
+        if st.session_state.get("draft_work_order_asset") == review_udi:
+            st.success(
+                st.session_state["draft_work_order"]
+            )
+
+    if (
+        st.session_state.get("draft_work_order") is None
+        and st.session_state.get("draft_work_order_error")
+    ):
+        st.error(
+            "Draft work-order service unavailable."
+        )
+        st.caption(
+            st.session_state["draft_work_order_error"]
+        )
+
+    # --------------------------------------------------------
+    # 9D. SUPERVISOR FLEET HANDOVER
+    # --------------------------------------------------------
 
     st.divider()
 
     st.subheader(
-        "Supervisor Fleet Summary"
+        "Supervisor Handover"
     )
 
-    st.write(
-        "Generate a concise fleet-level handover for the current review queue."
+    st.caption(
+        f"{len(review_df)} assets currently require review."
     )
 
     if st.button(
-        "Generate Fleet Handover"
+        "Generate Fleet Handover",
+        key="generate_fleet_handover",
     ):
 
         fleet_rows = []
 
-        for _, row in review_df.head(10).iterrows():
+        for _, row in review_df.sort_values(
+            "Risk_Priority_Score",
+            ascending=False,
+        ).iterrows():
 
             telemetry = build_telemetry_context(
                 full_df=full_df,
@@ -1036,8 +1103,7 @@ State that final action sits with authorised reliability / maintenance personnel
             )
 
             notable = telemetry[
-                telemetry["Flag"]
-                == "Review signal"
+                telemetry["Flag"] == "Review signal"
             ]
 
             notable_text = (
@@ -1069,10 +1135,19 @@ BOUNDARIES:
 - Do not authorise maintenance or isolation.
 - Prioritise the highest-risk assets first.
 
-Write:
-1. A two-sentence fleet summary.
-2. A short priority list of the top three assets requiring attention.
-3. One sentence on the recommended focus for the next shift.
+Write exactly:
+
+FLEET SUMMARY:
+Two concise sentences summarising the current review workload.
+
+TOP PRIORITIES:
+List the top three assets in priority order with the main reason each deserves attention.
+
+NEXT SHIFT FOCUS:
+One concise sentence stating what the incoming shift should focus on.
+
+DECISION OWNER:
+Authorised reliability / maintenance personnel.
 """
 
         fleet_summary, error = (
@@ -1082,16 +1157,23 @@ Write:
         )
 
         if fleet_summary is not None:
-            st.markdown(
-                "### Fleet Handover"
-            )
-            st.success(
-                fleet_summary
-            )
+            st.session_state["fleet_handover"] = fleet_summary
         else:
-            st.error(
-                "Fleet handover service unavailable."
-            )
-            st.caption(
-                str(error)
-            )
+            st.session_state["fleet_handover"] = None
+            st.session_state["fleet_handover_error"] = str(error)
+
+    if st.session_state.get("fleet_handover"):
+        st.success(
+            st.session_state["fleet_handover"]
+        )
+
+    if (
+        st.session_state.get("fleet_handover") is None
+        and st.session_state.get("fleet_handover_error")
+    ):
+        st.error(
+            "Fleet handover service unavailable."
+        )
+        st.caption(
+            st.session_state["fleet_handover_error"]
+        )
