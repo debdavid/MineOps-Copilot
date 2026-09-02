@@ -810,7 +810,7 @@ with operations_tab:
 
 with reliability_tab:
 
-    st.subheader("Shift Handover")
+    st.subheader("Incoming Shift Brief")
 
     review_df = demo_df[
         demo_df["Status"] == "Review Required"
