@@ -1,6 +1,3 @@
-
-
-
 import os
 import numpy as np
 import pandas as pd
@@ -813,7 +810,7 @@ with operations_tab:
 
 with reliability_tab:
 
-        review_df = demo_df[
+    review_df = demo_df[
         demo_df["Status"] == "Review Required"
     ].copy()
 
@@ -822,7 +819,6 @@ with reliability_tab:
             "No assets currently require reliability review."
         )
     else:
-
         st.subheader("Shift Handover")
 
         st.caption(
@@ -874,7 +870,7 @@ with reliability_tab:
             )
 
             fleet_prompt = f"""
-You are preparing a concise next-shift brief for an incoming mining reliability / maintenance team.
+You are preparing a concise shift handover for an incoming mining reliability / maintenance team.
 
 CURRENT REVIEW QUEUE:
 {fleet_evidence}
@@ -883,7 +879,7 @@ BOUNDARIES:
 - Do not invent failures, safety incidents, repair costs, work orders or engineering limits.
 - Do not authorise maintenance or isolation.
 - Prioritise the highest-risk assets first.
-- Do not describe any failure as imminent unless that is explicitly supported by the evidence.
+- Do not describe any failure as imminent unless explicitly supported by the evidence.
 - Do not name an individual decision owner.
 
 Write exactly:
