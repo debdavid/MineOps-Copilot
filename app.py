@@ -1,19 +1,3 @@
-
-"""
-VANTAGE v3 — Operations-Facing Decision Support Prototype
-
-Design goals:
-- Put the operational decision first.
-- Keep technical/model details available but secondary.
-- Avoid presenting statistical reference ranges as engineering safety limits.
-- Keep the quantitative model separate from the generative-AI explanation layer.
-- Keep the final maintenance decision with authorised reliability / maintenance personnel.
-
-Dataset:
-- UCI AI4I 2020 synthetic predictive-maintenance dataset.
-- This is NOT real mine telemetry.
-"""
-
 import os
 import numpy as np
 import pandas as pd
@@ -681,17 +665,10 @@ demo_df = demo_df.sort_values(
 # ============================================================
 
 st.title(
-    "VANTAGE: MineOps Copilot"
+    "VANTAGE | MineOps Copilot"
 )
 
-st.markdown(
-    "**Asset risk prioritisation and AI-assisted reliability decision support**"
-)
 
-st.caption(
-    "Prototype using synthetic industrial predictive-maintenance data. "
-    "Designed to help teams prioritise review — not replace engineering judgement."
-)
 
 
 # ------------------------------------------------------------
@@ -699,7 +676,7 @@ st.caption(
 # ------------------------------------------------------------
 
 st.subheader(
-    "1. What needs attention?"
+    "Fleet Overview"
 )
 
 review_df = demo_df[
@@ -731,12 +708,11 @@ c3.metric(
 
 if len(review_df) > 0:
     st.warning(
-        f"{len(review_df)} assets are above the model review threshold "
-        "and should be prioritised for reliability review."
+        f"{len(review_df)} assets require reliability review."
     )
 else:
     st.success(
-        "No assets are currently above the model review threshold."
+        "No assets currently require reliability review."
     )
 
 
@@ -745,7 +721,7 @@ else:
 # ------------------------------------------------------------
 
 st.subheader(
-    "2. Which assets should we look at first?"
+    "Priority Assets"
 )
 
 priority_table = (
@@ -772,9 +748,6 @@ st.dataframe(
     use_container_width=True,
 )
 
-st.caption(
-    "Assets are ranked so the team can focus attention on the highest-priority items first."
-)
 
 
 # ------------------------------------------------------------
@@ -784,7 +757,7 @@ st.caption(
 st.divider()
 
 st.subheader(
-    "3. Why has this asset been prioritised?"
+    "Asset Status"
 )
 
 selected_udi = st.selectbox(
@@ -830,16 +803,9 @@ r3.metric(
 )
 
 if status == "Review Required":
-    st.warning(
-        "This asset is above the model review threshold. "
-        "A reliability / maintenance review is recommended."
-    )
+    st.warning("Reliability review required.")
 else:
-    st.success(
-        "This asset is below the model review threshold. "
-        "Continue monitoring unless site procedures or engineering "
-        "judgement indicate otherwise."
-    )
+    st.success("Monitor")
 
 
 # ------------------------------------------------------------
@@ -847,7 +813,7 @@ else:
 # ------------------------------------------------------------
 
 st.markdown(
-    "### Supporting telemetry"
+    "### Telemetry"
 )
 
 telemetry_context = build_telemetry_context(
@@ -861,11 +827,11 @@ st.dataframe(
     use_container_width=True,
 )
 
-st.caption(
-    "*Reference range = 10th–90th percentile of the synthetic reference "
-    "dataset. This provides statistical context only; it is not an OEM, "
-    "site operating or safety limit."
-)
+with st.popover("Reference range"):
+    st.write(
+        "Reference range shows the central 80% of values in the reference dataset "
+        "(10th–90th percentile). It is contextual, not an engineering or safety limit."
+    )
 
 
 # ------------------------------------------------------------
@@ -875,17 +841,13 @@ st.caption(
 st.divider()
 
 st.subheader(
-    "4. Translate the evidence into an operational brief"
+    "Reliability Brief"
 )
 
-st.write(
-    "The quantitative model prioritises the asset. "
-    "The generative-AI layer explains the evidence in plain language. "
-    "The authorised reliability / maintenance team makes the final decision."
-)
+
 
 if st.button(
-    "Generate Reliability Brief",
+    "Generate Brief",
     type="primary",
 ):
 
@@ -944,7 +906,7 @@ Important:
         )
 
     st.markdown(
-        "### Reliability Explanation"
+        "### Assessment"
     )
 
     st.info(
@@ -952,7 +914,7 @@ Important:
     )
 
     st.markdown(
-        "### Draft Shift-Handover"
+        "### Shift Handover"
     )
 
     st.success(
@@ -967,7 +929,7 @@ Important:
 st.divider()
 
 with st.expander(
-    "Technical details — optional"
+    "Technical Information"
 ):
 
     st.markdown(
@@ -1038,7 +1000,7 @@ with st.expander(
     )
 
     st.markdown(
-        "#### Prototype boundaries"
+        "#### System Constraints"
     )
 
     st.write(
@@ -1053,7 +1015,7 @@ with st.expander(
     )
 
     st.markdown(
-        "#### Production next steps"
+        "#### Deployment Requirements"
     )
 
     st.write(
