@@ -656,43 +656,28 @@ demo_df = demo_df.sort_values(
 ).reset_index(drop=True)
 
 
-
-
 # ============================================================
-# 7. APP NAVIGATION
+# APP
 # ============================================================
 
-page = st.sidebar.radio(
-    "Navigation",
-    ["Operations Dashboard", "Reliability Workspace"],
+st.title("VANTAGE | MineOps Copilot")
+
+operations_tab, reliability_tab = st.tabs(
+    ["Operations Dashboard", "Reliability Workspace"]
 )
 
-st.sidebar.caption(
-    "VANTAGE | MineOps Copilot"
-)
+review_df = demo_df[
+    demo_df["Status"] == "Review Required"
+].copy()
+
+monitor_df = demo_df[
+    demo_df["Status"] == "Monitor"
+].copy()
 
 
-# ============================================================
-# 8. OPERATIONS DASHBOARD
-# ============================================================
+with operations_tab:
 
-if page == "Operations Dashboard":
-
-    st.title(
-        "VANTAGE | MineOps Copilot"
-    )
-
-    st.subheader(
-        "Fleet Overview"
-    )
-
-    review_df = demo_df[
-        demo_df["Status"] == "Review Required"
-    ]
-
-    monitor_df = demo_df[
-        demo_df["Status"] == "Monitor"
-    ]
+    st.subheader("Fleet Overview")
 
     c1, c2, c3 = st.columns(3)
 
@@ -720,9 +705,7 @@ if page == "Operations Dashboard":
             "No assets currently require reliability review."
         )
 
-    st.subheader(
-        "Priority Assets"
-    )
+    st.subheader("Priority Assets")
 
     priority_table = (
         demo_df[
@@ -750,16 +733,16 @@ if page == "Operations Dashboard":
 
     st.divider()
 
-    st.subheader(
-        "Asset Status"
-    )
+    st.subheader("Asset Status")
 
     asset_options = demo_df.index.tolist()
 
     selected_index = st.selectbox(
         "Select asset:",
         options=asset_options,
-        format_func=lambda i: str(demo_df.loc[i, "UDI"]),
+        format_func=lambda i: str(
+            demo_df.loc[i, "UDI"]
+        ),
         key="dashboard_asset_index",
     )
 
@@ -770,9 +753,7 @@ if page == "Operations Dashboard":
     selected_udi = selected_row["UDI"]
 
     risk_score = float(
-        selected_row[
-            "Risk_Priority_Score"
-        ]
+        selected_row["Risk_Priority_Score"]
     )
 
     threshold_percent = (
@@ -803,17 +784,10 @@ if page == "Operations Dashboard":
             "Reliability review required."
         )
     else:
-        st.success(
-            "Monitor"
-        )
+        st.success("Monitor")
 
-    st.markdown(
-        "### Telemetry"
-    )
-
-    st.caption(
-        f"Asset {selected_udi}"
-    )
+    st.markdown("### Telemetry")
+    st.caption(f"Asset {selected_udi}")
 
     telemetry_context = build_telemetry_context(
         full_df=full_df,
@@ -821,9 +795,7 @@ if page == "Operations Dashboard":
     )
 
     st.table(
-        telemetry_context.set_index(
-            "Signal"
-        )
+        telemetry_context.set_index("Signal")
     )
 
     with st.popover(
@@ -836,95 +808,78 @@ if page == "Operations Dashboard":
         )
 
 
+with reliability_tab:
 
-# ============================================================
-# 9. RELIABILITY WORKSPACE
-# ============================================================
-
-else:
-
-    st.title(
-        "Reliability Workspace"
-    )
-
-    review_df = demo_df[
-        demo_df["Status"] == "Review Required"
-    ].copy()
+    st.subheader("Reliability Workspace")
 
     if len(review_df) == 0:
         st.success(
             "No assets currently require reliability review."
         )
-        st.stop()
+    else:
 
-    # --------------------------------------------------------
-    # 9A. ASSET SELECTION
-    # --------------------------------------------------------
+        st.markdown("### Select Asset")
 
-    st.subheader(
-        "Select Asset"
-    )
+        review_asset_options = (
+            review_df.index.tolist()
+        )
 
-    review_asset_options = (
-        review_df.index.tolist()
-    )
+        selected_review_index = st.selectbox(
+            "Asset:",
+            options=review_asset_options,
+            format_func=lambda i: (
+                f"{review_df.loc[i, 'UDI']}  |  "
+                f"{review_df.loc[i, 'Risk_Priority_Score']:.1f}%"
+            ),
+            key="workspace_asset_index",
+        )
 
-    selected_review_index = st.selectbox(
-        "Asset:",
-        options=review_asset_options,
-        format_func=lambda i: (
-            f"{review_df.loc[i, 'UDI']}  |  "
-            f"{review_df.loc[i, 'Risk_Priority_Score']:.1f}%"
-        ),
-        key="workspace_asset_index",
-    )
+        review_row = review_df.loc[
+            selected_review_index
+        ].copy()
 
-    review_row = review_df.loc[
-        selected_review_index
-    ].copy()
+        review_udi = review_row["UDI"]
 
-    review_udi = review_row["UDI"]
+        review_risk_score = float(
+            review_row["Risk_Priority_Score"]
+        )
 
-    review_risk_score = float(
-        review_row[
-            "Risk_Priority_Score"
-        ]
-    )
+        review_threshold = (
+            metrics["alert_threshold"] * 100
+        )
 
-    review_threshold = (
-        metrics["alert_threshold"] * 100
-    )
-
-    review_telemetry = build_telemetry_context(
-        full_df=full_df,
-        selected_row=review_row,
-    )
-
-    st.caption(
-        f"Asset {review_udi} | Risk priority score {review_risk_score:.1f}%"
-    )
-
-    # --------------------------------------------------------
-    # 9B. AI MAINTENANCE RECOMMENDATION
-    # --------------------------------------------------------
-
-    st.markdown(
-        "### Maintenance Recommendation"
-    )
-
-    if st.button(
-        "Generate Recommendation",
-        type="primary",
-        key="generate_recommendation",
-    ):
-
-        telemetry_text = (
-            review_telemetry.to_string(
-                index=False
+        review_telemetry = (
+            build_telemetry_context(
+                full_df=full_df,
+                selected_row=review_row,
             )
         )
 
-        recommendation_prompt = f"""
+        st.caption(
+            f"Asset {review_udi} | "
+            f"Risk priority score {review_risk_score:.1f}%"
+        )
+
+        action_col, order_col = st.columns(2)
+
+        with action_col:
+            st.markdown(
+                "### Maintenance Recommendation"
+            )
+
+            if st.button(
+                "Generate Recommendation",
+                type="primary",
+                key="generate_recommendation",
+            ):
+
+                telemetry_text = (
+                    review_telemetry.to_string(
+                        index=False
+                    )
+                )
+
+                recommendation_prompt = f"""
 You are supporting a mining reliability team.
 
 Use ONLY the evidence below.
@@ -962,65 +917,84 @@ QUESTIONS FOR ENGINEER:
 List 2-3 checks or questions to consider before deciding.
 
 DECISION OWNER:
-Authorised reliability / maintenance personnel.
+Reliability / maintenance team.
 """
 
-        recommendation, error = (
-            invoke_llm_with_fallback(
-                recommendation_prompt
+                recommendation, error = (
+                    invoke_llm_with_fallback(
+                        recommendation_prompt
+                    )
+                )
+
+                if recommendation is not None:
+                    st.session_state[
+                        "maintenance_recommendation"
+                    ] = recommendation
+
+                    st.session_state[
+                        "maintenance_recommendation_asset"
+                    ] = review_udi
+
+                    st.session_state[
+                        "maintenance_recommendation_error"
+                    ] = None
+                else:
+                    st.session_state[
+                        "maintenance_recommendation"
+                    ] = None
+
+                    st.session_state[
+                        "maintenance_recommendation_error"
+                    ] = str(error)
+
+            if (
+                st.session_state.get(
+                    "maintenance_recommendation"
+                )
+                and st.session_state.get(
+                    "maintenance_recommendation_asset"
+                ) == review_udi
+            ):
+                st.info(
+                    st.session_state[
+                        "maintenance_recommendation"
+                    ]
+                )
+
+            if (
+                st.session_state.get(
+                    "maintenance_recommendation"
+                ) is None
+                and st.session_state.get(
+                    "maintenance_recommendation_error"
+                )
+            ):
+                st.error(
+                    "Recommendation service unavailable."
+                )
+
+        with order_col:
+            st.markdown(
+                "### Draft Work Order"
             )
-        )
 
-        if recommendation is not None:
-            st.session_state["maintenance_recommendation"] = recommendation
-            st.session_state["maintenance_recommendation_asset"] = review_udi
-            st.session_state["maintenance_recommendation_error"] = None
-        else:
-            st.session_state["maintenance_recommendation"] = None
-            st.session_state["maintenance_recommendation_error"] = str(error)
+            st.caption(
+                "Prepare a draft maintenance request for review."
+            )
 
-    if (
-        st.session_state.get("maintenance_recommendation")
-        and st.session_state.get("maintenance_recommendation_asset") == review_udi
-    ):
-        st.info(
-            st.session_state["maintenance_recommendation"]
-        )
+            if st.button(
+                "Generate Draft Work Order",
+                key="generate_work_order",
+            ):
 
-    if (
-        st.session_state.get("maintenance_recommendation") is None
-        and st.session_state.get("maintenance_recommendation_error")
-    ):
-        st.error(
-            "Recommendation service unavailable."
-        )
-        st.caption(
-            st.session_state["maintenance_recommendation_error"]
-        )
+                prior_recommendation = (
+                    st.session_state.get(
+                        "maintenance_recommendation",
+                        "",
+                    )
+                )
 
-    # --------------------------------------------------------
-    # 9C. DRAFT WORK ORDER
-    # --------------------------------------------------------
-
-    st.markdown(
-        "### Draft Work Order"
-    )
-
-    st.caption(
-        "Prepare a draft maintenance request for review and transfer into a work-management system."
-    )
-
-    if st.button(
-        "Generate Draft Work Order",
-        key="generate_work_order",
-    ):
-
-        prior_recommendation = st.session_state.get(
-            "maintenance_recommendation",
-            ""
-        )
-
-        work_order_prompt = f"""
+                work_order_prompt = f"""
 You are preparing a draft maintenance work-order description for review.
 
 ASSET:
@@ -1048,93 +1022,117 @@ TELEMETRY TO VERIFY:
 APPROVAL STATUS: Draft — reliability / maintenance approval required
 """
 
-        work_order, error = (
-            invoke_llm_with_fallback(
-                work_order_prompt
-            )
-        )
-
-        if work_order is not None:
-            st.session_state["draft_work_order"] = work_order
-            st.session_state["draft_work_order_asset"] = review_udi
-            st.session_state["draft_work_order_error"] = None
-        else:
-            st.session_state["draft_work_order"] = None
-            st.session_state["draft_work_order_error"] = str(error)
-
-    if (
-        st.session_state.get("draft_work_order")
-        and st.session_state.get("draft_work_order_asset") == review_udi
-    ):
-        st.success(
-            st.session_state["draft_work_order"]
-        )
-
-    if (
-        st.session_state.get("draft_work_order") is None
-        and st.session_state.get("draft_work_order_error")
-    ):
-        st.error(
-            "Draft work-order service unavailable."
-        )
-        st.caption(
-            st.session_state["draft_work_order_error"]
-        )
-
-    # --------------------------------------------------------
-    # 9D. NEXT SHIFT BRIEF — FLEET LEVEL
-    # --------------------------------------------------------
-
-    st.divider()
-
-    st.subheader(
-        "Next Shift Brief"
-    )
-
-    st.caption(
-        "Fleet-level summary for the incoming reliability / maintenance shift."
-    )
-
-    if st.button(
-        "Generate Next Shift Brief",
-        key="generate_next_shift_brief",
-    ):
-
-        fleet_rows = []
-
-        for _, row in review_df.sort_values(
-            "Risk_Priority_Score",
-            ascending=False,
-        ).iterrows():
-
-            telemetry = build_telemetry_context(
-                full_df=full_df,
-                selected_row=row,
-            )
-
-            notable = telemetry[
-                telemetry["Flag"] == "Review signal"
-            ]
-
-            notable_text = (
-                ", ".join(
-                    notable["Signal"].tolist()
+                work_order, error = (
+                    invoke_llm_with_fallback(
+                        work_order_prompt
+                    )
                 )
-                if len(notable) > 0
-                else "no single telemetry signal outside the typical range"
-            )
 
-            fleet_rows.append(
-                f"Asset {row['UDI']}: "
-                f"risk priority score {row['Risk_Priority_Score']:.1f}%; "
-                f"notable signals: {notable_text}."
-            )
+                if work_order is not None:
+                    st.session_state[
+                        "draft_work_order"
+                    ] = work_order
 
-        fleet_evidence = "\n".join(
-            fleet_rows
+                    st.session_state[
+                        "draft_work_order_asset"
+                    ] = review_udi
+
+                    st.session_state[
+                        "draft_work_order_error"
+                    ] = None
+                else:
+                    st.session_state[
+                        "draft_work_order"
+                    ] = None
+
+                    st.session_state[
+                        "draft_work_order_error"
+                    ] = str(error)
+
+            if (
+                st.session_state.get(
+                    "draft_work_order"
+                )
+                and st.session_state.get(
+                    "draft_work_order_asset"
+                ) == review_udi
+            ):
+                st.success(
+                    st.session_state[
+                        "draft_work_order"
+                    ]
+                )
+
+            if (
+                st.session_state.get(
+                    "draft_work_order"
+                ) is None
+                and st.session_state.get(
+                    "draft_work_order_error"
+                )
+            ):
+                st.error(
+                    "Draft work-order service unavailable."
+                )
+
+        st.divider()
+
+        st.subheader("Next Shift Brief")
+
+        st.caption(
+            "Fleet-level summary for the incoming reliability / maintenance shift."
         )
 
-        fleet_prompt = f"""
+        if st.button(
+            "Generate Next Shift Brief",
+            key="generate_next_shift_brief",
+        ):
+
+            fleet_rows = []
+
+            for _, row in review_df.sort_values(
+                "Risk_Priority_Score",
+                ascending=False,
+            ).iterrows():
+
+                telemetry = (
+                    build_telemetry_context(
+                        full_df=full_df,
+                        selected_row=row,
+                    )
+                )
+
+                notable = telemetry[
+                    telemetry["Flag"]
+                    == "Review signal"
+                ]
+
+                notable_text = (
+                    ", ".join(
+                        notable[
+                            "Signal"
+                        ].tolist()
+                    )
+                    if len(notable) > 0
+                    else (
+                        "no single telemetry signal "
+                        "outside the typical range"
+                    )
+                )
+
+                fleet_rows.append(
+                    f"Asset {row['UDI']}: "
+                    f"risk priority score "
+                    f"{row['Risk_Priority_Score']:.1f}%; "
+                    f"notable signals: "
+                    f"{notable_text}."
+                )
+
+            fleet_evidence = "\n".join(
+                fleet_rows
+            )
+
+            fleet_prompt = f"""
 You are preparing a concise next-shift brief for an incoming mining reliability / maintenance team.
 
 CURRENT REVIEW QUEUE:
@@ -1161,31 +1159,46 @@ DECISION OWNER:
 Reliability / maintenance team.
 """
 
-        fleet_summary, error = (
-            invoke_llm_with_fallback(
-                fleet_prompt
+            fleet_summary, error = (
+                invoke_llm_with_fallback(
+                    fleet_prompt
+                )
             )
-        )
 
-        if fleet_summary is not None:
-            st.session_state["next_shift_brief"] = fleet_summary
-            st.session_state["next_shift_brief_error"] = None
-        else:
-            st.session_state["next_shift_brief"] = None
-            st.session_state["next_shift_brief_error"] = str(error)
+            if fleet_summary is not None:
+                st.session_state[
+                    "next_shift_brief"
+                ] = fleet_summary
 
-    if st.session_state.get("next_shift_brief"):
-        st.success(
-            st.session_state["next_shift_brief"]
-        )
+                st.session_state[
+                    "next_shift_brief_error"
+                ] = None
+            else:
+                st.session_state[
+                    "next_shift_brief"
+                ] = None
 
-    if (
-        st.session_state.get("next_shift_brief") is None
-        and st.session_state.get("next_shift_brief_error")
-    ):
-        st.error(
-            "Next shift brief service unavailable."
-        )
-        st.caption(
-            st.session_state["next_shift_brief_error"]
-        )
+                st.session_state[
+                    "next_shift_brief_error"
+                ] = str(error)
+
+        if st.session_state.get(
+            "next_shift_brief"
+        ):
+            st.success(
+                st.session_state[
+                    "next_shift_brief"
+                ]
+            )
+
+        if (
+            st.session_state.get(
+                "next_shift_brief"
+            ) is None
+            and st.session_state.get(
+                "next_shift_brief_error"
+            )
+        ):
+            st.error(
+                "Next shift brief service unavailable."
+            )
