@@ -822,239 +822,15 @@ with reliability_tab:
         )
     else:
 
-        # Asset-specific workflow
-        st.markdown("### Asset Action")
+        st.subheader("Fleet Handover")
 
-        review_asset_options = review_df.index.tolist()
-
-        selected_review_index = st.selectbox(
-            "Select asset for action:",
-            options=review_asset_options,
-            format_func=lambda i: (
-                f"{review_df.loc[i, 'UDI']}  |  "
-                f"{review_df.loc[i, 'Risk_Priority_Score']:.1f}%"
-            ),
-            key="workspace_asset_index",
-        )
-
-        review_row = review_df.loc[
-            selected_review_index
-        ].copy()
-
-        review_udi = review_row["UDI"]
-
-        review_risk_score = float(
-            review_row["Risk_Priority_Score"]
-        )
-
-        review_threshold = (
-            metrics["alert_threshold"] * 100
-        )
-
-        review_telemetry = build_telemetry_context(
-            full_df=full_df,
-            selected_row=review_row,
-        )
-
-        action_col, order_col = st.columns(2)
-
-        with action_col:
-            st.markdown("#### Maintenance Recommendation")
-
-            if st.button(
-                "Generate Recommendation",
-                type="primary",
-                key="generate_recommendation",
-            ):
-
-                telemetry_text = review_telemetry.to_string(
-                    index=False
-                )
-
-                recommendation_prompt = f"""
-You are supporting a mining reliability team.
-
-Use ONLY the evidence below.
-
-ASSET:
-Asset ID: {review_udi}
-Risk priority score: {review_risk_score:.1f}%
-Review threshold: {review_threshold:.1f}%
-Status: Review Required
-
-TELEMETRY CONTEXT:
-{telemetry_text}
-
-BOUNDARIES:
-- Do not diagnose a specific failure mode unless the evidence supports it.
-- Do not invent manufacturer limits, safety limits, repair costs or shutdown requirements.
-- Do not authorise isolation or maintenance.
-- Recommendations remain decision support for authorised reliability personnel.
-
-Produce a concise recommendation with exactly these headings:
-
-PRIORITY:
-Choose High, Medium, or Low based on the supplied evidence.
-
-RECOMMENDED ACTION:
-State the next reasonable reliability action, such as inspect, trend, verify, or schedule review.
-
-FOCUS AREAS:
-Name the telemetry signals that deserve attention.
-
-RATIONALE:
-Explain briefly why this asset should be reviewed.
-
-QUESTIONS FOR ENGINEER:
-List 2-3 checks or questions to consider before deciding.
-
-DECISION OWNER:
-Reliability / maintenance team.
-"""
-
-                recommendation, error = invoke_llm_with_fallback(
-                    recommendation_prompt
-                )
-
-                if recommendation is not None:
-                    st.session_state[
-                        "maintenance_recommendation"
-                    ] = recommendation
-                    st.session_state[
-                        "maintenance_recommendation_asset"
-                    ] = review_udi
-                    st.session_state[
-                        "maintenance_recommendation_error"
-                    ] = None
-                else:
-                    st.session_state[
-                        "maintenance_recommendation"
-                    ] = None
-                    st.session_state[
-                        "maintenance_recommendation_error"
-                    ] = str(error)
-
-            if (
-                st.session_state.get("maintenance_recommendation")
-                and st.session_state.get(
-                    "maintenance_recommendation_asset"
-                ) == review_udi
-            ):
-                st.info(
-                    st.session_state[
-                        "maintenance_recommendation"
-                    ]
-                )
-
-            if (
-                st.session_state.get(
-                    "maintenance_recommendation"
-                ) is None
-                and st.session_state.get(
-                    "maintenance_recommendation_error"
-                )
-            ):
-                st.error(
-                    "Recommendation service unavailable."
-                )
-
-        with order_col:
-            st.markdown("#### Draft Work Order")
-
-            st.caption(
-                "Create a draft maintenance request for review."
-            )
-
-            if st.button(
-                "Generate Draft Work Order",
-                key="generate_work_order",
-            ):
-
-                prior_recommendation = st.session_state.get(
-                    "maintenance_recommendation",
-                    ""
-                )
-
-                work_order_prompt = f"""
-You are preparing a draft maintenance work-order description for review.
-
-ASSET:
-Asset ID: {review_udi}
-Risk priority score: {review_risk_score:.1f}%
-
-AI MAINTENANCE RECOMMENDATION:
-{prior_recommendation}
-
-TELEMETRY:
-{review_telemetry.to_string(index=False)}
-
-BOUNDARIES:
-- This is a draft only.
-- Do not invent a failure diagnosis.
-- Do not invent parts, costs, labour hours, shutdown duration, safety instructions or isolation requirements.
-- Do not authorise work.
-- Use concise professional maintenance language.
-
-FORMAT:
-ASSET:
-REASON FOR REVIEW:
-SUGGESTED INSPECTION SCOPE:
-TELEMETRY TO VERIFY:
-APPROVAL STATUS: Draft — reliability / maintenance approval required
-"""
-
-                work_order, error = invoke_llm_with_fallback(
-                    work_order_prompt
-                )
-
-                if work_order is not None:
-                    st.session_state[
-                        "draft_work_order"
-                    ] = work_order
-                    st.session_state[
-                        "draft_work_order_asset"
-                    ] = review_udi
-                    st.session_state[
-                        "draft_work_order_error"
-                    ] = None
-                else:
-                    st.session_state[
-                        "draft_work_order"
-                    ] = None
-                    st.session_state[
-                        "draft_work_order_error"
-                    ] = str(error)
-
-            if (
-                st.session_state.get("draft_work_order")
-                and st.session_state.get(
-                    "draft_work_order_asset"
-                ) == review_udi
-            ):
-                st.success(
-                    st.session_state["draft_work_order"]
-                )
-
-            if (
-                st.session_state.get("draft_work_order") is None
-                and st.session_state.get(
-                    "draft_work_order_error"
-                )
-            ):
-                st.error(
-                    "Draft work-order service unavailable."
-                )
-
-        # Fleet-level workflow, intentionally separate from selected asset.
-        st.divider()
-
-        st.markdown("### Fleet Handover")
         st.caption(
-            "Prepare a next-shift summary across all assets currently requiring review."
+            "Next-shift summary across all assets currently requiring review."
         )
 
         if st.button(
             "Generate Next Shift Brief",
+            type="primary",
             key="generate_next_shift_brief",
         ):
 
@@ -1106,6 +882,7 @@ BOUNDARIES:
 - Do not invent failures, safety incidents, repair costs, work orders or engineering limits.
 - Do not authorise maintenance or isolation.
 - Prioritise the highest-risk assets first.
+- Do not describe any failure as imminent unless that is explicitly supported by the evidence.
 - Do not name an individual decision owner.
 
 Write exactly:
@@ -1117,7 +894,7 @@ TOP PRIORITIES:
 List the top three assets in priority order, with one short reason each.
 
 NEXT SHIFT FOCUS:
-One concise sentence stating what the incoming reliability / maintenance team should focus on.
+One concise sentence telling the incoming team to review the highest-risk assets and verify the abnormal telemetry signals.
 
 DECISION OWNER:
 Reliability / maintenance team.
