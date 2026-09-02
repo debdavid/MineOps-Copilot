@@ -836,6 +836,7 @@ if page == "Operations Dashboard":
         )
 
 
+
 # ============================================================
 # 9. RELIABILITY WORKSPACE
 # ============================================================
@@ -857,11 +858,11 @@ else:
         st.stop()
 
     # --------------------------------------------------------
-    # 9A. SELECT ASSET FOR ACTION
+    # 9A. ASSET SELECTION
     # --------------------------------------------------------
 
     st.subheader(
-        "Asset Action"
+        "Select Asset"
     )
 
     review_asset_options = (
@@ -869,7 +870,7 @@ else:
     )
 
     selected_review_index = st.selectbox(
-        "Select asset:",
+        "Asset:",
         options=review_asset_options,
         format_func=lambda i: (
             f"{review_df.loc[i, 'UDI']}  |  "
@@ -899,7 +900,6 @@ else:
         selected_row=review_row,
     )
 
-    # Show only concise context needed to act, not a duplicate dashboard.
     st.caption(
         f"Asset {review_udi} | Risk priority score {review_risk_score:.1f}%"
     )
@@ -940,14 +940,14 @@ TELEMETRY CONTEXT:
 
 BOUNDARIES:
 - Do not diagnose a specific failure mode unless the evidence supports it.
-- Do not invent OEM limits, safety limits, repair costs or shutdown requirements.
+- Do not invent manufacturer limits, safety limits, repair costs or shutdown requirements.
 - Do not authorise isolation or maintenance.
-- Recommendations must remain decision support for authorised reliability personnel.
+- Recommendations remain decision support for authorised reliability personnel.
 
-Produce a concise operational recommendation with exactly these headings:
+Produce a concise recommendation with exactly these headings:
 
 PRIORITY:
-Choose High, Medium, or Low based on the evidence supplied.
+Choose High, Medium, or Low based on the supplied evidence.
 
 RECOMMENDED ACTION:
 State the next reasonable reliability action, such as inspect, trend, verify, or schedule review.
@@ -959,10 +959,10 @@ RATIONALE:
 Explain briefly why this asset should be reviewed.
 
 QUESTIONS FOR ENGINEER:
-List 2-3 checks or questions the reliability engineer should consider before deciding.
+List 2-3 checks or questions to consider before deciding.
 
 DECISION OWNER:
-State that final action sits with authorised reliability / maintenance personnel.
+Authorised reliability / maintenance personnel.
 """
 
         recommendation, error = (
@@ -974,15 +974,18 @@ State that final action sits with authorised reliability / maintenance personnel
         if recommendation is not None:
             st.session_state["maintenance_recommendation"] = recommendation
             st.session_state["maintenance_recommendation_asset"] = review_udi
+            st.session_state["maintenance_recommendation_error"] = None
         else:
             st.session_state["maintenance_recommendation"] = None
             st.session_state["maintenance_recommendation_error"] = str(error)
 
-    if st.session_state.get("maintenance_recommendation"):
-        if st.session_state.get("maintenance_recommendation_asset") == review_udi:
-            st.info(
-                st.session_state["maintenance_recommendation"]
-            )
+    if (
+        st.session_state.get("maintenance_recommendation")
+        and st.session_state.get("maintenance_recommendation_asset") == review_udi
+    ):
+        st.info(
+            st.session_state["maintenance_recommendation"]
+        )
 
     if (
         st.session_state.get("maintenance_recommendation") is None
@@ -1001,6 +1004,10 @@ State that final action sits with authorised reliability / maintenance personnel
 
     st.markdown(
         "### Draft Work Order"
+    )
+
+    st.caption(
+        "Prepare a draft maintenance request for review and transfer into a work-management system."
     )
 
     if st.button(
@@ -1050,15 +1057,18 @@ APPROVAL STATUS: Draft — reliability / maintenance approval required
         if work_order is not None:
             st.session_state["draft_work_order"] = work_order
             st.session_state["draft_work_order_asset"] = review_udi
+            st.session_state["draft_work_order_error"] = None
         else:
             st.session_state["draft_work_order"] = None
             st.session_state["draft_work_order_error"] = str(error)
 
-    if st.session_state.get("draft_work_order"):
-        if st.session_state.get("draft_work_order_asset") == review_udi:
-            st.success(
-                st.session_state["draft_work_order"]
-            )
+    if (
+        st.session_state.get("draft_work_order")
+        and st.session_state.get("draft_work_order_asset") == review_udi
+    ):
+        st.success(
+            st.session_state["draft_work_order"]
+        )
 
     if (
         st.session_state.get("draft_work_order") is None
@@ -1072,22 +1082,22 @@ APPROVAL STATUS: Draft — reliability / maintenance approval required
         )
 
     # --------------------------------------------------------
-    # 9D. SUPERVISOR FLEET HANDOVER
+    # 9D. NEXT SHIFT BRIEF — FLEET LEVEL
     # --------------------------------------------------------
 
     st.divider()
 
     st.subheader(
-        "Supervisor Handover"
+        "Next Shift Brief"
     )
 
     st.caption(
-        f"{len(review_df)} assets currently require review."
+        "Fleet-level summary for the incoming reliability / maintenance shift."
     )
 
     if st.button(
-        "Generate Fleet Handover",
-        key="generate_fleet_handover",
+        "Generate Next Shift Brief",
+        key="generate_next_shift_brief",
     ):
 
         fleet_rows = []
@@ -1125,7 +1135,7 @@ APPROVAL STATUS: Draft — reliability / maintenance approval required
         )
 
         fleet_prompt = f"""
-You are preparing a supervisor shift handover for a mining reliability team.
+You are preparing a concise next-shift brief for an incoming mining reliability / maintenance team.
 
 CURRENT REVIEW QUEUE:
 {fleet_evidence}
@@ -1134,20 +1144,21 @@ BOUNDARIES:
 - Do not invent failures, safety incidents, repair costs, work orders or engineering limits.
 - Do not authorise maintenance or isolation.
 - Prioritise the highest-risk assets first.
+- Do not name an individual decision owner.
 
 Write exactly:
 
 FLEET SUMMARY:
-Two concise sentences summarising the current review workload.
+Two concise sentences describing the current review workload.
 
 TOP PRIORITIES:
-List the top three assets in priority order with the main reason each deserves attention.
+List the top three assets in priority order, with one short reason each.
 
 NEXT SHIFT FOCUS:
-One concise sentence stating what the incoming shift should focus on.
+One concise sentence stating what the incoming reliability / maintenance team should focus on.
 
 DECISION OWNER:
-Authorised reliability / maintenance personnel.
+Reliability / maintenance team.
 """
 
         fleet_summary, error = (
@@ -1157,23 +1168,24 @@ Authorised reliability / maintenance personnel.
         )
 
         if fleet_summary is not None:
-            st.session_state["fleet_handover"] = fleet_summary
+            st.session_state["next_shift_brief"] = fleet_summary
+            st.session_state["next_shift_brief_error"] = None
         else:
-            st.session_state["fleet_handover"] = None
-            st.session_state["fleet_handover_error"] = str(error)
+            st.session_state["next_shift_brief"] = None
+            st.session_state["next_shift_brief_error"] = str(error)
 
-    if st.session_state.get("fleet_handover"):
+    if st.session_state.get("next_shift_brief"):
         st.success(
-            st.session_state["fleet_handover"]
+            st.session_state["next_shift_brief"]
         )
 
     if (
-        st.session_state.get("fleet_handover") is None
-        and st.session_state.get("fleet_handover_error")
+        st.session_state.get("next_shift_brief") is None
+        and st.session_state.get("next_shift_brief_error")
     ):
         st.error(
-            "Fleet handover service unavailable."
+            "Next shift brief service unavailable."
         )
         st.caption(
-            st.session_state["fleet_handover_error"]
+            st.session_state["next_shift_brief_error"]
         )
