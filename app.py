@@ -822,14 +822,14 @@ with reliability_tab:
         )
     else:
 
-        st.subheader("Fleet Handover")
+        st.subheader("Shift Handover")
 
         st.caption(
-            "Next-shift summary across all assets currently requiring review."
+            "Summary and recommended focus for the incoming reliability / maintenance shift."
         )
 
         if st.button(
-            "Generate Next Shift Brief",
+            "Generate Shift Handover",
             type="primary",
             key="generate_next_shift_brief",
         ):
@@ -887,14 +887,14 @@ BOUNDARIES:
 
 Write exactly:
 
-FLEET SUMMARY:
+SHIFT SUMMARY:
 Two concise sentences describing the current review workload.
 
-TOP PRIORITIES:
+TOP PRIORITY ASSETS:
 List the top three assets in priority order, with one short reason each.
 
-NEXT SHIFT FOCUS:
-One concise sentence telling the incoming team to review the highest-risk assets and verify the abnormal telemetry signals.
+RECOMMENDED NEXT-SHIFT ACTIONS:
+Give 2-4 concise, evidence-based actions for the incoming shift. These may include reviewing the highest-risk assets first, verifying abnormal telemetry, trending selected signals, or escalating an asset for reliability review.
 
 DECISION OWNER:
 Reliability / maintenance team.
@@ -933,5 +933,5 @@ Reliability / maintenance team.
             )
         ):
             st.error(
-                "Next shift brief service unavailable."
+                "Shift handover service unavailable."
             )
