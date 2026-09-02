@@ -20,7 +20,6 @@ import pandas as pd
 import streamlit as st
 
 from typing import TypedDict
-
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.pipeline import Pipeline
@@ -44,7 +43,7 @@ from dotenv import load_dotenv
 # ============================================================
 
 st.set_page_config(
-    page_title="VANTAGE | Operations Intelligence",
+    page_title="VANTAGE | MineOps Copilot",
     layout="wide",
 )
 
@@ -107,14 +106,13 @@ UNITS = {
 
 
 # ============================================================
-# 1. DATA LOADING
+# 1. DATA
 # ============================================================
 
 @st.cache_data
 def load_full_dataset():
     """
-    Prefer a local copy for interview reliability.
-    Falls back to UCI only if the local file is unavailable.
+    Prefer a local copy for demo reliability.
     """
     df = None
 
@@ -138,25 +136,19 @@ def load_full_dataset():
 
 
 # ============================================================
-# 2. MODEL TRAINING + VALIDATION
+# 2. MODEL
 # ============================================================
 
 @st.cache_resource
 def train_failure_model(df):
     """
     Random Forest model:
-    - learns nonlinear interactions from labelled historical examples
-    - avoids arbitrary manual 40/40/20 weighting
-
-    Data split:
-    - 60% train
-    - 20% validation
-    - 20% test
+    - learns relationships from labelled data
+    - avoids arbitrary hand-set feature weights
 
     Threshold:
-    - selected on validation data using F2 score
-    - F2 gives more weight to recall than precision
-    - production threshold would still need site-specific calibration
+    - chosen on validation data using F2
+    - F2 weights recall more heavily than precision
     """
 
     X = df[FEATURES].copy()
@@ -179,7 +171,7 @@ def train_failure_model(df):
     )
 
     preprocessor = ColumnTransformer(
-        transformers=[
+        [
             (
                 "numeric",
                 StandardScaler(),
@@ -203,7 +195,7 @@ def train_failure_model(df):
     )
 
     model = Pipeline(
-        steps=[
+        [
             ("preprocess", preprocessor),
             ("classifier", classifier),
         ]
@@ -211,9 +203,6 @@ def train_failure_model(df):
 
     model.fit(X_train, y_train)
 
-    # -------------------------
-    # Choose alert threshold
-    # -------------------------
     val_probability = model.predict_proba(X_val)[:, 1]
 
     threshold_rows = []
@@ -253,9 +242,6 @@ def train_failure_model(df):
 
     alert_threshold = float(best_row["threshold"])
 
-    # -------------------------
-    # Test performance
-    # -------------------------
     test_probability = model.predict_proba(X_test)[:, 1]
 
     test_prediction = (
@@ -314,11 +300,8 @@ def train_failure_model(df):
 @st.cache_data
 def build_demo_fleet(test_records):
     """
-    Build a 100-record interview/demo fleet from held-out examples.
-
-    Historical failures are deliberately oversampled to make the demo
-    visually useful. This is NOT representative of a real fleet's
-    natural failure prevalence.
+    Build a 100-record demonstration fleet.
+    Historical failures are deliberately oversampled for demo visibility.
     """
 
     failed = test_records[
@@ -352,25 +335,49 @@ def build_demo_fleet(test_records):
 
 
 # ============================================================
-# 4. REFERENCE CONTEXT FOR TELEMETRY
+# 4. TELEMETRY CONTEXT
 # ============================================================
 
-def percentile_rank(series: pd.Series, value: float) -> float:
+def percentile_rank(
+    series: pd.Series,
+    value: float,
+) -> float:
     """
     Percentage of reference observations at or below current value.
     """
-    return float((series <= value).mean() * 100)
+    return float(
+        (series <= value).mean() * 100
+    )
 
 
-def reference_interpretation(percentile: float) -> str:
+def relative_band(percentile: float) -> str:
     """
-    Statistical context only — NOT an engineering safety classification.
+    Plain-language statistical context.
+    NOT an engineering safety classification.
     """
+    if percentile >= 95:
+        return "Very high relative to reference"
     if percentile >= 90:
-        return "Unusually high"
+        return "High relative to reference"
+    if percentile <= 5:
+        return "Very low relative to reference"
     if percentile <= 10:
-        return "Unusually low"
+        return "Low relative to reference"
     return "Within typical reference range"
+
+
+def relative_position_text(
+    percentile: float,
+) -> str:
+    if percentile >= 99.5:
+        return "At or above the highest values in the reference data"
+    if percentile <= 0.5:
+        return "At or below the lowest values in the reference data"
+
+    return (
+        f"Higher than approximately "
+        f"{percentile:.0f}% of reference observations"
+    )
 
 
 def build_telemetry_context(
@@ -381,8 +388,11 @@ def build_telemetry_context(
     rows = []
 
     for feature in NUMERIC_FEATURES:
-        value = float(selected_row[feature])
-        pctl = percentile_rank(
+        value = float(
+            selected_row[feature]
+        )
+
+        percentile = percentile_rank(
             full_df[feature],
             value,
         )
@@ -390,27 +400,32 @@ def build_telemetry_context(
         q10 = float(
             full_df[feature].quantile(0.10)
         )
+
         q90 = float(
             full_df[feature].quantile(0.90)
         )
 
         rows.append(
             {
-                "Signal": DISPLAY_NAMES[feature],
-                "Current reading": (
-                    f"{value:.1f} {UNITS[feature]}"
-                ),
-                "Typical reference range*": (
+                "Signal":
+                    DISPLAY_NAMES[feature],
+
+                "Current":
+                    f"{value:.1f} {UNITS[feature]}",
+
+                "Reference range*":
                     f"{q10:.1f}–{q90:.1f} "
-                    f"{UNITS[feature]}"
-                ),
-                "Relative position": (
-                    f"Higher than {pctl:.0f}% "
-                    "of reference observations"
-                ),
-                "Context": reference_interpretation(
-                    pctl
-                ),
+                    f"{UNITS[feature]}",
+
+                "Position":
+                    relative_position_text(
+                        percentile
+                    ),
+
+                "Interpretation":
+                    relative_band(
+                        percentile
+                    ),
             }
         )
 
@@ -418,7 +433,7 @@ def build_telemetry_context(
 
 
 # ============================================================
-# 5. LLM EXPLANATION LAYER
+# 5. GENERATIVE-AI EXPLANATION LAYER
 # ============================================================
 
 load_dotenv()
@@ -430,15 +445,21 @@ GROQ_MODEL_CANDIDATES = [
 ]
 
 
-def invoke_llm_with_fallback(prompt: str):
+def invoke_llm_with_fallback(
+    prompt: str,
+):
     """
-    LLM is optional.
-    The quantitative model/dashboard remain usable if Groq fails.
+    Optional explanation layer.
+    The quantitative dashboard keeps working if Groq fails.
     """
+
     key = os.getenv("GROQ_API_KEY")
 
     if not key:
-        return None, "No GROQ_API_KEY configured"
+        return (
+            None,
+            "No GROQ_API_KEY configured",
+        )
 
     last_error = None
 
@@ -450,9 +471,14 @@ def invoke_llm_with_fallback(prompt: str):
                 groq_api_key=key,
             )
 
-            response = llm.invoke(prompt)
+            response = llm.invoke(
+                prompt
+            )
 
-            return response.content, model_name
+            return (
+                response.content,
+                model_name,
+            )
 
         except Exception as exc:
             last_error = (
@@ -464,135 +490,131 @@ def invoke_llm_with_fallback(prompt: str):
 
 class AgentState(TypedDict):
     evidence: str
-    technical_explanation: str
-    handover_note: str
+    explanation: str
+    handover: str
 
 
-def evidence_router(state: AgentState):
+def pass_evidence(
+    state: AgentState,
+):
     return {
-        "evidence": state["evidence"]
+        "evidence":
+            state["evidence"]
     }
 
 
-def reliability_explanation(
+def explain_risk(
     state: AgentState,
 ):
-    """
-    LLM explains evidence.
-    It does NOT independently diagnose the asset.
-    """
-
     prompt = f"""
 You are supporting a reliability engineering team.
 
-IMPORTANT:
-- A quantitative ML model has already produced the model risk score.
-- Do NOT claim you independently diagnosed a mechanical failure.
-- Do NOT invent safety limits, repair costs, isolation procedures,
-  engineering thresholds or financial savings.
-- Statistical reference ranges are NOT engineering safety limits.
+IMPORTANT BOUNDARIES:
+- A quantitative ML model has already created the model risk score.
+- Do NOT independently diagnose a mechanical failure.
+- Do NOT invent safety limits, engineering thresholds, repair costs,
+  isolation procedures or financial savings.
+- Statistical reference ranges are not engineering safety limits.
 - Final maintenance decisions belong to authorised reliability /
   maintenance personnel.
 
 MODEL EVIDENCE:
 {state['evidence']}
 
-Write in plain operational language.
+Write for an operational user.
 
 OUTPUT:
-RISK SUMMARY:
-Explain whether the asset is currently above or below the model review
-threshold.
+WHY THIS ASSET WAS FLAGGED:
+Explain the model status in plain language.
 
-TELEMETRY CONTEXT:
-Summarise only the most notable current telemetry observations.
+NOTABLE TELEMETRY:
+Mention only the readings that stand out most strongly relative to the
+reference data.
 
-NEXT STEP:
-Recommend continued monitoring OR reliability review depending on the
-model status, with final action determined according to approved site
-procedures.
+WHAT HAPPENS NEXT:
+Recommend either continued monitoring or reliability review, based on
+the model status.
 """
 
-    content, error = invoke_llm_with_fallback(
-        prompt
+    content, error = (
+        invoke_llm_with_fallback(
+            prompt
+        )
     )
 
     if content is not None:
         return {
-            "technical_explanation": content
+            "explanation": content
         }
 
     return {
-        "technical_explanation":
-        "The generative-AI explanation layer is unavailable. "
-        "The quantitative risk model remains operational. "
-        f"Technical note: {error}"
+        "explanation":
+            "The generative-AI explanation layer is unavailable. "
+            "The quantitative model remains operational. "
+            f"Technical note: {error}"
     }
 
 
-def operations_communication(
+def draft_handover(
     state: AgentState,
 ):
-    """
-    Draft shift-handover communication.
-    No autonomous maintenance instruction.
-    """
-
     prompt = f"""
-Turn the following reliability explanation into a concise shift-
-handover note.
+Convert this explanation into a concise shift-handover note.
 
 BOUNDARIES:
-- Do NOT invent safety limits or safety procedures.
-- Do NOT order isolation unless already authorised.
+- Do NOT invent safety procedures.
+- Do NOT order equipment isolation.
 - Do NOT invent financial values.
-- Final maintenance decision belongs to authorised reliability /
-  maintenance personnel.
+- Final action belongs to authorised reliability / maintenance staff.
 
 EXPLANATION:
-{state['technical_explanation']}
+{state['explanation']}
 
 FORMAT:
-ALERT:
-EVIDENCE:
-RECOMMENDED NEXT STEP:
+STATUS:
+WHY:
+NEXT STEP:
 DECISION OWNER:
 """
 
-    content, _ = invoke_llm_with_fallback(
-        prompt
+    content, _ = (
+        invoke_llm_with_fallback(
+            prompt
+        )
     )
 
     if content is not None:
         return {
-            "handover_note": content
+            "handover": content
         }
 
     return {
-        "handover_note":
-        "ALERT: Review the selected asset status.\n"
-        "EVIDENCE: Refer to the model risk score and current telemetry.\n"
-        "RECOMMENDED NEXT STEP: Follow the dashboard status and approved "
-        "site procedures.\n"
-        "DECISION OWNER: Authorised reliability / maintenance team."
+        "handover":
+            "STATUS: Review selected asset status.\n"
+            "WHY: Refer to model score and current telemetry context.\n"
+            "NEXT STEP: Follow the dashboard recommendation and approved "
+            "site procedures.\n"
+            "DECISION OWNER: Authorised reliability / maintenance team."
     }
 
 
-workflow = StateGraph(AgentState)
+workflow = StateGraph(
+    AgentState
+)
 
 workflow.add_node(
     "evidence",
-    evidence_router,
+    pass_evidence,
 )
 
 workflow.add_node(
-    "reliability_explainer",
-    reliability_explanation,
+    "explanation",
+    explain_risk,
 )
 
 workflow.add_node(
-    "handover_writer",
-    operations_communication,
+    "handover",
+    draft_handover,
 )
 
 workflow.add_edge(
@@ -602,16 +624,16 @@ workflow.add_edge(
 
 workflow.add_edge(
     "evidence",
-    "reliability_explainer",
+    "explanation",
 )
 
 workflow.add_edge(
-    "reliability_explainer",
-    "handover_writer",
+    "explanation",
+    "handover",
 )
 
 workflow.add_edge(
-    "handover_writer",
+    "handover",
     END,
 )
 
@@ -619,7 +641,7 @@ app_engine = workflow.compile()
 
 
 # ============================================================
-# 6. PREPARE DATA + MODEL
+# 6. PREPARE MODEL + DEMO DATA
 # ============================================================
 
 full_df = load_full_dataset()
@@ -629,13 +651,15 @@ full_df = load_full_dataset()
     metrics,
     threshold_table,
     test_records,
-) = train_failure_model(full_df)
+) = train_failure_model(
+    full_df
+)
 
 demo_df = build_demo_fleet(
     test_records
 )
 
-demo_df["Model_Risk_Score"] = (
+demo_df["Risk_Priority_Score"] = (
     demo_df["Model_Risk"] * 100
 ).round(1)
 
@@ -647,47 +671,45 @@ demo_df["Status"] = np.where(
 )
 
 demo_df = demo_df.sort_values(
-    "Model_Risk",
+    by="Model_Risk",
     ascending=False,
 ).reset_index(drop=True)
 
 
 # ============================================================
-# 7. OPERATIONS-FACING DASHBOARD
+# 7. BUSINESS-FACING INTERVIEW DEMO
 # ============================================================
 
 st.title(
-    "VANTAGE: Operations Intelligence"
+    "VANTAGE: MineOps Copilot"
+)
+
+st.markdown(
+    "**Asset risk prioritisation and AI-assisted reliability decision support**"
 )
 
 st.caption(
-    "Predictive-maintenance decision-support prototype | "
-    "Synthetic AI4I industrial data | "
-    "Human reliability judgement retained"
-)
-
-st.info(
-    "Prototype scope: this application uses synthetic industrial "
-    "predictive-maintenance data, not live mine telemetry. "
-    "Model scores support prioritisation; they are not engineering "
-    "safety limits or autonomous maintenance decisions."
+    "Prototype using synthetic industrial predictive-maintenance data. "
+    "Designed to help teams prioritise review — not replace engineering judgement."
 )
 
 
 # ------------------------------------------------------------
-# 7A. FLEET STATUS
+# 7A. FLEET OVERVIEW
 # ------------------------------------------------------------
 
 st.subheader(
-    "Fleet Status"
+    "1. What needs attention?"
 )
 
 review_df = demo_df[
-    demo_df["Status"] == "Review Required"
+    demo_df["Status"]
+    == "Review Required"
 ]
 
 monitor_df = demo_df[
-    demo_df["Status"] == "Monitor"
+    demo_df["Status"]
+    == "Monitor"
 ]
 
 c1, c2, c3 = st.columns(3)
@@ -707,20 +729,30 @@ c3.metric(
     len(monitor_df),
 )
 
+if len(review_df) > 0:
+    st.warning(
+        f"{len(review_df)} assets are above the model review threshold "
+        "and should be prioritised for reliability review."
+    )
+else:
+    st.success(
+        "No assets are currently above the model review threshold."
+    )
+
 
 # ------------------------------------------------------------
 # 7B. PRIORITY ASSETS
 # ------------------------------------------------------------
 
 st.subheader(
-    "Priority Assets"
+    "2. Which assets should we look at first?"
 )
 
 priority_table = (
     demo_df[
         [
             "UDI",
-            "Model_Risk_Score",
+            "Risk_Priority_Score",
             "Status",
         ]
     ]
@@ -730,7 +762,7 @@ priority_table = (
 
 priority_table.columns = [
     "Asset ID",
-    "Model risk score (%)",
+    "Risk priority score (%)",
     "Status",
 ]
 
@@ -741,20 +773,18 @@ st.dataframe(
 )
 
 st.caption(
-    "Assets are ranked by model risk score so reliability teams can "
-    "focus attention where the model indicates the greatest relative "
-    "risk."
+    "Assets are ranked so the team can focus attention on the highest-priority items first."
 )
 
 
 # ------------------------------------------------------------
-# 7C. SELECT ASSET
+# 7C. ASSET REVIEW
 # ------------------------------------------------------------
 
 st.divider()
 
 st.subheader(
-    "Asset Review"
+    "3. Why has this asset been prioritised?"
 )
 
 selected_udi = st.selectbox(
@@ -763,41 +793,46 @@ selected_udi = st.selectbox(
 )
 
 selected_row = demo_df[
-    demo_df["UDI"] == selected_udi
+    demo_df["UDI"]
+    == selected_udi
 ].iloc[0]
 
 risk_score = float(
-    selected_row["Model_Risk_Score"]
+    selected_row[
+        "Risk_Priority_Score"
+    ]
 )
 
 threshold_percent = (
-    metrics["alert_threshold"] * 100
+    metrics["alert_threshold"]
+    * 100
 )
 
-status = selected_row["Status"]
+status = (
+    selected_row["Status"]
+)
 
-a1, a2, a3 = st.columns(3)
+r1, r2, r3 = st.columns(3)
 
-a1.metric(
-    "Model risk score",
+r1.metric(
+    "Risk priority score",
     f"{risk_score:.1f}%",
 )
 
-a2.metric(
+r2.metric(
     "Review threshold",
     f"{threshold_percent:.1f}%",
 )
 
-a3.metric(
-    "Decision-support status",
+r3.metric(
+    "Status",
     status,
 )
 
 if status == "Review Required":
     st.warning(
         "This asset is above the model review threshold. "
-        "A reliability / maintenance review is recommended before "
-        "any consequential action is taken."
+        "A reliability / maintenance review is recommended."
     )
 else:
     st.success(
@@ -808,11 +843,11 @@ else:
 
 
 # ------------------------------------------------------------
-# 7D. TELEMETRY CONTEXT
+# 7D. TELEMETRY
 # ------------------------------------------------------------
 
 st.markdown(
-    "### Current Telemetry Context"
+    "### Supporting telemetry"
 )
 
 telemetry_context = build_telemetry_context(
@@ -827,51 +862,52 @@ st.dataframe(
 )
 
 st.caption(
-    "*Typical reference range = 10th–90th percentile of the synthetic "
-    "reference dataset. This is statistical context only and must not "
-    "be treated as an OEM limit, Whitehaven operating limit or safety "
-    "threshold."
+    "*Reference range = 10th–90th percentile of the synthetic reference "
+    "dataset. This provides statistical context only; it is not an OEM, "
+    "site operating or safety limit."
 )
 
 
-# ============================================================
-# 8. AI-ASSISTED EXPLANATION
-# ============================================================
+# ------------------------------------------------------------
+# 7E. AI BRIEF
+# ------------------------------------------------------------
 
 st.divider()
 
 st.subheader(
-    "AI-Assisted Reliability Brief"
+    "4. Translate the evidence into an operational brief"
 )
 
 st.write(
-    "The quantitative model creates the risk signal. "
-    "The LLM explains the evidence and drafts a handover note. "
-    "It does not authorise maintenance action."
+    "The quantitative model prioritises the asset. "
+    "The generative-AI layer explains the evidence in plain language. "
+    "The authorised reliability / maintenance team makes the final decision."
 )
 
 if st.button(
-    "Generate Reliability Review Brief",
+    "Generate Reliability Brief",
     type="primary",
 ):
 
-    telemetry_text = telemetry_context.to_string(
-        index=False
+    telemetry_text = (
+        telemetry_context.to_string(
+            index=False
+        )
     )
 
     evidence = f"""
 Asset ID: {selected_row['UDI']}
-Model risk score: {risk_score:.1f}%
+Risk priority score: {risk_score:.1f}%
 Model review threshold: {threshold_percent:.1f}%
 Status: {status}
 
-Telemetry statistical context:
+Telemetry context:
 {telemetry_text}
 
-Important boundaries:
+Important:
 - Synthetic AI4I industrial predictive-maintenance data.
 - Statistical reference ranges are not engineering safety limits.
-- Final action belongs to authorised reliability / maintenance staff.
+- Final maintenance action remains with authorised personnel.
 """
 
     with st.status(
@@ -880,27 +916,29 @@ Important boundaries:
     ) as progress:
 
         st.write(
-            "1. Quantitative model evidence prepared."
+            "Quantitative model evidence prepared."
         )
 
-        final_state = app_engine.invoke(
-            {
-                "evidence": evidence,
-                "technical_explanation": "",
-                "handover_note": "",
-            }
+        final_state = (
+            app_engine.invoke(
+                {
+                    "evidence": evidence,
+                    "explanation": "",
+                    "handover": "",
+                }
+            )
         )
 
         st.write(
-            "2. LLM translated the evidence into operational language."
+            "AI explanation prepared."
         )
 
         st.write(
-            "3. Draft handover note prepared."
+            "Draft handover prepared."
         )
 
         progress.update(
-            label="Reliability brief prepared.",
+            label="Reliability brief ready.",
             state="complete",
             expanded=False,
         )
@@ -910,54 +948,52 @@ Important boundaries:
     )
 
     st.info(
-        final_state[
-            "technical_explanation"
-        ]
+        final_state["explanation"]
     )
 
     st.markdown(
-        "### Draft Shift-Handover Note"
+        "### Draft Shift-Handover"
     )
 
     st.success(
-        final_state[
-            "handover_note"
-        ]
+        final_state["handover"]
     )
 
 
 # ============================================================
-# 9. TECHNICAL DETAIL — PROGRESSIVE DISCLOSURE
+# 8. OPTIONAL TECHNICAL DETAIL
 # ============================================================
 
 st.divider()
 
 with st.expander(
-    "Technical detail — model validation"
+    "Technical details — optional"
 ):
-    st.write(
-        "This section is intended for technical review, not for the "
-        "front-line operational workflow."
+
+    st.markdown(
+        "#### Model validation"
     )
 
-    m1, m2, m3, m4 = st.columns(4)
+    t1, t2, t3, t4 = st.columns(
+        4
+    )
 
-    m1.metric(
+    t1.metric(
         "Test recall",
         f"{metrics['recall']:.1%}",
     )
 
-    m2.metric(
+    t2.metric(
         "Test precision",
         f"{metrics['precision']:.1%}",
     )
 
-    m3.metric(
+    t3.metric(
         "F2 score",
         f"{metrics['f2']:.2f}",
     )
 
-    m4.metric(
+    t4.metric(
         "Average precision",
         f"{metrics['average_precision']:.2f}",
     )
@@ -966,97 +1002,69 @@ with st.expander(
         {
             "True positives":
                 metrics["true_positive"],
+
             "False positives":
                 metrics["false_positive"],
+
             "False negatives":
                 metrics["false_negative"],
+
             "True negatives":
                 metrics["true_negative"],
         }
     )
 
     st.caption(
-        "The prototype uses F2 to give more weight to recall when "
-        "selecting the alert threshold. In a production mining use "
-        "case, the threshold would be jointly calibrated with "
-        "reliability engineers using real failure costs and site risk."
+        "The alert threshold is selected on validation data using F2, "
+        "which weights recall more heavily than precision. "
+        "A production mining threshold would require calibration with "
+        "site-specific failure data and reliability-engineering judgement."
     )
 
-
-with st.expander(
-    "Technical detail — telemetry exploration"
-):
-    st.write(
-        "The original prototype used a 3D telemetry view. "
-        "It is retained here only as an optional analytical view so "
-        "it does not add cognitive load to the main operational screen."
-    )
-
-    try:
-        import plotly.express as px
-
-        fig = px.scatter_3d(
-            demo_df,
-            x="Tool_Wear_min",
-            y="Torque_Nm",
-            z="Air_Temp_K",
-            color="Model_Risk_Score",
-            hover_data=[
-                "UDI",
-                "Process_Temp_K",
-                "Rotational_Speed_rpm",
-                TARGET,
-                "Status",
-            ],
-            labels={
-                "Tool_Wear_min":
-                    "Tool Wear (min)",
-                "Torque_Nm":
-                    "Torque (Nm)",
-                "Air_Temp_K":
-                    "Air Temperature (K)",
-                "Model_Risk_Score":
-                    "Model risk score (%)",
-            },
-            title=(
-                "Optional analytical view — "
-                "model risk across visible telemetry dimensions"
-            ),
-        )
-
-        st.plotly_chart(
-            fig,
-            use_container_width=True,
-        )
-
-        st.caption(
-            "This visualisation is exploratory only. The model also "
-            "uses process temperature, rotational speed and product "
-            "type, so the 3D chart is not the complete decision logic."
-        )
-
-    except Exception as exc:
-        st.write(
-            "Technical visualisation unavailable."
-        )
-
-
-with st.expander(
-    "Production-readiness considerations"
-):
     st.markdown(
-        """
-Before production use, I would:
+        "#### Model design"
+    )
 
-- replace synthetic data with site-specific historical telemetry;
-- validate timestamps, sensor quality, asset identifiers and operating context;
-- retrain and test against known maintenance and failure outcomes;
-- calibrate the alert threshold with reliability engineers;
-- compare the cost of false negatives against false positives;
-- monitor drift and model performance over time;
-- establish access controls, auditability and operational ownership;
-- use OEM / engineering limits where applicable rather than statistical reference ranges;
-- integrate with SAP / Maximo / Power BI only after workflow and security validation;
-- pilot the solution before wider operational deployment.
+    st.write(
+        """
+- **Model:** Random Forest classifier
+- **Inputs:** equipment type, air temperature, process temperature,
+  rotational speed, torque and tool wear
+- **Target:** historical machine-failure label
+- **Reason for this approach:** allows nonlinear relationships and
+  interactions to be learned from labelled examples rather than imposing
+  arbitrary manual feature weights
+        """
+    )
+
+    st.markdown(
+        "#### Prototype boundaries"
+    )
+
+    st.write(
+        """
+- Synthetic industrial dataset — not live Whitehaven telemetry
+- Demo data deliberately includes additional historical failure examples
+- Model score is a prioritisation signal, not a certified failure probability
+- Statistical ranges are not safety limits
+- No live SAP / Maximo integration
+- LLM does not authorise maintenance action
+        """
+    )
+
+    st.markdown(
+        "#### Production next steps"
+    )
+
+    st.write(
+        """
+1. Replace synthetic data with site-specific historical telemetry.
+2. Validate sensor quality, timestamps and asset context.
+3. Retrain and test against actual maintenance / failure outcomes.
+4. Calibrate thresholds with reliability engineers.
+5. Measure false positives and false negatives in operational terms.
+6. Apply OEM and approved site operating limits where relevant.
+7. Add monitoring, access controls and auditability.
+8. Pilot before broader operational deployment.
         """
     )
